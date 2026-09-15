@@ -47,3 +47,22 @@ a {
     color-scheme: dark;
   }
 }
+
+:root {
+  --card-bg: #f7f7f8;
+  --card-border: #e2e2e5;
+  --accent: #2563eb;
+  --muted: #6b7280;
+  --severity-info: #2563eb;
+  --severity-warning: #d97706;
+  --severity-critical: #dc2626;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --card-bg: #17181c;
+    --card-border: #2c2d33;
+    --accent: #60a5fa;
+    --muted: #9ca3af;
+  }
+}

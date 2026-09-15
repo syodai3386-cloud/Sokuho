@@ -1,36 +1,42 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 速報ハブ
 
-## Getting Started
+電車遅延・渋滞情報・地震/災害・天気をジャンルごとに選び、路線や地域まで絞り込んで一元的に確認できるアプリ。すべて無料のデータソースのみで構成しています。
 
-First, run the development server:
+## 開発
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+http://localhost:3000 を開く（`.claude/launch.json` 経由でBrowserプレビューを使う場合はポート3100）。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## データソース
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| ジャンル | ソース | 登録 |
+|---|---|---|
+| 天気 | [気象庁 天気予報API](https://www.jma.go.jp/bosai/forecast/) | 不要 |
+| 地震・災害 | [P2P地震情報API](https://www.p2pquake.net/) | 不要 |
+| 電車遅延 | [ODPT(公共交通オープンデータセンター)](https://developer-dc.odpt.org/) | **要登録**(無料) |
+| 渋滞情報 | [JARTICオープンデータ](https://www.jartic-open-traffic.org/) | **要登録**(無料) |
 
-## Learn More
+電車遅延・渋滞情報は現在サンプルデータを表示しています。実データに切り替えるには以下の手順が必要です。
 
-To learn more about Next.js, take a look at the following resources:
+### 電車遅延を実データにする
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. https://developer-dc.odpt.org/ で開発者登録し、アクセストークンを取得する
+2. `src/lib/sources/train.ts` の TODO コメントを参照し、ODPTの `odpt:TrainInformation` API を呼び出す実装に差し替える
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### 渋滞情報を実データにする
 
-## Deploy on Vercel
+1. https://www.jartic-open-traffic.org/ で利用規約に同意し、APIキーを取得する
+2. `src/lib/sources/traffic.ts` の TODO コメントを参照し、JARTICの交通量APIを呼び出す実装に差し替える（取得できるのは交通量であり、渋滞度への変換ロジックが別途必要）
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 構成
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `src/lib/types.ts`: ジャンル横断の正規化データ形式(`NormalizedItem`)
+- `src/lib/genres.ts`: ジャンルごとの選択肢・メタ情報(単一の設定源)
+- `src/lib/sources/*.ts`: ジャンルごとの外部APIアダプタ
+- `src/lib/cache.ts`: 無料APIへの過剰アクセスを避けるための簡易インメモリキャッシュ
+- `src/app/api/[genre]/route.ts`: フロントから叩くAPI Route
+- `src/app/[genre]/page.tsx` + `src/components/GenreView.tsx`: ドリルダウン画面
