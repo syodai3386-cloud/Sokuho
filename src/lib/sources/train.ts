@@ -122,7 +122,14 @@ const RAILWAY_TTL_MS = 6 * 60 * 60_000;
 const SOURCE_URL = "https://developer.odpt.org/";
 const MERGE_THRESHOLD = 4;
 const SEVERE = /見合わせ|運休|運転中止/;
-const NORMAL_TEXT = /平常(通り|どおり)?(運転|運行)|遅延はありません|遅れはありません/;
+// 遅れ・運休などの支障を表す語
+const TROUBLE = /遅れ|遅延|乱れ|見合わせ|運休|運転中止/;
+// 「〜する場合があります」のように、今後の可能性・予定・予報を述べているだけの文
+const PRECAUTION = /場合があります|場合がございます|可能性|おそれ|恐れ|予定|見込み|予報/;
+// 「15分以上の遅延はありません」のように、支障がないことを述べる文
+const NEGATION = /ありません|ございません/;
+// 運行情報の状態欄が、実際に支障が出ていることを示すもの(「お知らせ」「運行情報あり」は含めない)
+const ACTUAL_STATUS = /遅延|見合わせ|運休|運転中止|ダイヤ乱れ/;
 
 function getKey(tier: Tier): string | undefined {
   return process.env[KEY_ENV[tier]]?.trim() || undefined;
@@ -151,15 +158,70 @@ async function fetchOdpt<T>(url: string, tier: Tier): Promise<T[]> {
   return (await res.json()) as T[];
 }
 
-function severityOf(status: string | undefined, text: string): Severity {
-  const s = status ?? "";
-  if (SEVERE.test(s)) return "critical";
-  // 「お知らせ」は台風などの事前注意喚起が多く、実際の運休とは限らない
-  if (s === "お知らせ") return /遅れ|遅延|運休|見合わせ/.test(text) ? "warning" : "info";
-  if (SEVERE.test(text) && !/場合があります|可能性/.test(text)) return "critical";
-  return "warning";
+function toAscii(s: string): string {
+  return s.replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
 }
 
+function jstNow() {
+  const d = new Date(Date.now() + 9 * 3_600_000);
+  return {
+    year: d.getUTCFullYear(),
+    month: d.getUTCMonth() + 1,
+    day: d.getUTCDate(),
+    minutes: d.getUTCHours() * 60 + d.getUTCMinutes(),
+  };
+}
+
+// 「10月13日から運休となります」「19時50分頃から運休します」のように、現在ではなく
+// 別の日・これからの時刻の出来事を述べている文か(工事による運休予定、これから始まる運転見合わせなど)
+function isNotNow(sentence: string): boolean {
+  const s = toAscii(sentence);
+  const now = jstNow();
+  if (/明日|明後日|翌日|あす/.test(s)) return true;
+  for (const m of s.matchAll(/(\d{4})年/g)) {
+    if (Number(m[1]) !== now.year) return true;
+  }
+  for (const m of s.matchAll(/(\d{1,2})月(\d{1,2})日/g)) {
+    if (Number(m[1]) !== now.month || Number(m[2]) !== now.day) return true;
+  }
+  // 月が付かない「22日」など
+  for (const m of s.matchAll(/(?<![月\d])(\d{1,2})日/g)) {
+    if (Number(m[1]) !== now.day) return true;
+  }
+  for (const m of s.matchAll(/(\d{1,2})時(?:(\d{1,2})分)?頃?(?:から|以降)/g)) {
+    if (Number(m[1]) * 60 + Number(m[2] ?? 0) > now.minutes) return true;
+  }
+  return false;
+}
+
+// 現時点で実際に遅れ・運休などが発生しているかと、その重大度を返す。
+// 台風接近時の「お知らせ」や「〜する場合があります」のような事前の注意喚起は対象外。
+function assessTrouble(
+  status: string | undefined,
+  text: string,
+): { actual: boolean; severity: Severity; label?: string } {
+  const s = status ?? "";
+  const sentences = text
+    .split(/[。\n]/)
+    .map((x) => x.trim())
+    .filter((x) => x && TROUBLE.test(x) && !PRECAUTION.test(x) && !NEGATION.test(x) && !isNotNow(x));
+  const actual = ACTUAL_STATUS.test(s) || sentences.length > 0;
+  const critical = SEVERE.test(s) || sentences.some((x) => SEVERE.test(x));
+  // 状態欄が「運行情報あり」のように中身を表さない場合は、文面の内容から表題を作る
+  const joined = sentences.join("。");
+  const label = ACTUAL_STATUS.test(s)
+    ? s
+    : /見合わせ/.test(joined)
+      ? "運転見合わせ"
+      : /運休|運転中止/.test(joined)
+        ? "運休"
+        : /遅れ|遅延/.test(joined)
+          ? "遅れ"
+          : /乱れ/.test(joined)
+            ? "ダイヤ乱れ"
+            : undefined;
+  return { actual, severity: critical ? "critical" : "warning", label };
+}
 // 一部の路線は同じ文が2回連結されて届く(東武など)ので、1回分にする
 function dedupeRepeatedText(text: string): string {
   const t = text.trim();
@@ -215,7 +277,8 @@ async function fetchOperator(operator: Operator, key: string | undefined, url: s
     railwayId?: string;
     lineTitle: string;
     area: string;
-    status?: string;
+    label?: string;
+    severity: Severity;
     text: string;
     cause?: string;
     date: string;
@@ -224,14 +287,16 @@ async function fetchOperator(operator: Operator, key: string | undefined, url: s
   for (const info of infos) {
     const status = info["odpt:trainInformationStatus"]?.ja?.trim() || undefined;
     const text = dedupeRepeatedText(info["odpt:trainInformationText"]?.ja ?? "詳細情報なし");
-    if (!status && NORMAL_TEXT.test(text)) continue;
+    const trouble = assessTrouble(status, text);
+    if (!trouble.actual) continue;
 
     const railwayId = info["odpt:railway"];
     entries.push({
       railwayId,
       lineTitle: railwayId ? resolveLineName(operator, railwayId, masterNames, text) : `${operator.name}全線`,
       area: railwayId ? areaOf(operator, railwaySuffix(railwayId)) : AREA_METRO,
-      status,
+      label: trouble.label,
+      severity: trouble.severity,
       text,
       cause: info["odpt:trainInformationCause"]?.ja,
       date: info["dc:date"],
@@ -249,7 +314,7 @@ async function fetchOperator(operator: Operator, key: string | undefined, url: s
   // 東武のように、多数の路線に全く同じ文面(全線向けの注意喚起)が出ている場合は1件にまとめる
   const groups = new Map<string, Entry[]>();
   for (const e of entries) {
-    const key = `${e.area}|${e.status ?? ""}|${e.text}`;
+    const key = `${e.area}|${e.label ?? ""}|${e.text}`;
     groups.set(key, [...(groups.get(key) ?? []), e]);
   }
 
@@ -259,14 +324,14 @@ async function fetchOperator(operator: Operator, key: string | undefined, url: s
     if (group.length >= MERGE_THRESHOLD) {
       items.push({
         ...base,
-        id: `train:${operator.id}:${first.area}:${first.status ?? ""}:${first.text}`,
+        id: `train:${operator.id}:${first.area}:${first.label ?? ""}:${first.text}`,
         area: first.area,
-        title: `${operator.name} ${group.length}路線${first.status ? `: ${first.status}` : ""}`,
+        title: `${operator.name} ${group.length}路線${first.label ? `: ${first.label}` : ""}`,
         body: `${bodyOf(first)}(対象: ${group
           .map((e) => (e.lineTitle.startsWith(operator.linePrefix) ? e.lineTitle.slice(operator.linePrefix.length) : e.lineTitle))
           .join("、")})`,
         timestamp: group.reduce((latest, e) => (e.date > latest ? e.date : latest), first.date),
-        severity: severityOf(first.status, first.text),
+        severity: first.severity,
       });
       continue;
     }
@@ -275,10 +340,10 @@ async function fetchOperator(operator: Operator, key: string | undefined, url: s
         ...base,
         id: `train:${e.railwayId ?? operator.id}`,
         area: e.area,
-        title: e.status ? `${e.lineTitle}: ${e.status}` : e.lineTitle,
+        title: e.label ? `${e.lineTitle}: ${e.label}` : e.lineTitle,
         body: bodyOf(e),
         timestamp: e.date,
-        severity: severityOf(e.status, e.text),
+        severity: e.severity,
       });
     }
   }

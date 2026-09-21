@@ -122,7 +122,7 @@ export function GenreView({ genre }: { genre: GenreConfig }) {
       )}
 
       {!loading && !fetched?.error && genre.autoLoad && (
-        <p className={styles.summary}>情報が出ている路線: {visibleItems.length}件</p>
+        <p className={styles.summary}>遅れ・運休が出ている路線: {visibleItems.length}件</p>
       )}
 
       {genre.areas && (
