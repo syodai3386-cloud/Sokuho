@@ -16,6 +16,9 @@ export type GenreConfig = {
   defaultValue?: string;
   // true なら選択欄を出さず、開いた時点で options[0] の内容を自動表示する
   autoLoad?: boolean;
+  // 結果を地域で絞り込むチップ(NormalizedItem.area と一致させる)と、その初期値
+  areas?: string[];
+  defaultArea?: string;
   // 結果一覧の下に常に出す補足
   footnote?: string;
   // 結果が0件のときの文言
@@ -163,9 +166,11 @@ export const GENRES: GenreConfig[] = [
     inputLabel: "",
     options: [{ value: "all", label: "全路線" }],
     autoLoad: true,
+    areas: ["首都圏", "北関東・甲信越", "東北"],
+    defaultArea: "首都圏",
     emptyMessage: "現在、運行情報が出ている路線はありません。",
     footnote:
-      "ここに表示されていない路線は、現在運行情報が出ていません(平常運転)。対象はJR東日本・東京メトロ・都営地下鉄・東急・京王・西武・東武です。小田急線・京成線は、データ提供元(ODPT)に運行情報がないため対象外です。",
+      "ここに表示されていない路線は、現在運行情報が出ていません(平常運転)。対象はJR東日本・東京メトロ・都営地下鉄・東急・京王・西武・東武です。小田急線・京成線は、データ提供元(ODPT)に運行情報がないため対象外です。初期表示は首都圏に絞っています(エリアはJR東日本の路線の区分で、私鉄・地下鉄はすべて首都圏に含めています)。",
   },
   {
     id: "traffic",

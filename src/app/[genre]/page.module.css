@@ -66,11 +66,21 @@
   margin-bottom: 12px;
 }
 
+.chipRow {
+  margin-bottom: 10px;
+}
+
+.chipLabel {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .chips {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-bottom: 4px;
 }
 
 .chip {

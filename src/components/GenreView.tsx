@@ -22,6 +22,7 @@ export function GenreView({ genre }: { genre: GenreConfig }) {
   const [target, setTarget] = useState(genre.defaultValue ?? genre.options[0]?.value ?? "");
   const [reloadCount, setReloadCount] = useState(0);
   const [filter, setFilter] = useState(ALL);
+  const [area, setArea] = useState(genre.defaultArea ?? ALL);
   const [fetched, setFetched] = useState<FetchedState | null>(null);
 
   const requestKey = `${genre.id}:${target}:${reloadCount}`;
@@ -62,9 +63,15 @@ export function GenreView({ genre }: { genre: GenreConfig }) {
   }, [genre.id, target, requestKey]);
 
   const allItems = fetched?.items ?? [];
-  const categories = [...new Set(allItems.map((i) => i.category).filter((c): c is string => Boolean(c)))];
+  const areaItems = area === ALL ? allItems : allItems.filter((i) => i.area === area);
+  const categories = [...new Set(areaItems.map((i) => i.category).filter((c): c is string => Boolean(c)))];
   const activeFilter = categories.includes(filter) ? filter : ALL;
-  const visibleItems = activeFilter === ALL ? allItems : allItems.filter((i) => i.category === activeFilter);
+  const visibleItems = activeFilter === ALL ? areaItems : areaItems.filter((i) => i.category === activeFilter);
+  const hiddenByArea = allItems.length - areaItems.length;
+  const emptyMessage =
+    hiddenByArea > 0 && genre.emptyMessage
+      ? `${genre.emptyMessage}(他のエリアには${hiddenByArea}件あります)`
+      : genre.emptyMessage;
 
   return (
     <main className={styles.main}>
@@ -115,25 +122,50 @@ export function GenreView({ genre }: { genre: GenreConfig }) {
       )}
 
       {!loading && !fetched?.error && genre.autoLoad && (
-        <p className={styles.summary}>情報が出ている路線: {allItems.length}件</p>
+        <p className={styles.summary}>情報が出ている路線: {visibleItems.length}件</p>
+      )}
+
+      {genre.areas && (
+        <div className={styles.chipRow}>
+          <span className={styles.chipLabel}>エリア</span>
+          <div className={styles.chips} role="group" aria-label="エリアで絞り込み">
+            {[ALL, ...genre.areas].map((a) => {
+              const count = a === ALL ? allItems.length : allItems.filter((i) => i.area === a).length;
+              return (
+                <button
+                  key={a}
+                  type="button"
+                  className={`${styles.chip} ${a === area ? styles.chipActive : ""}`}
+                  aria-pressed={a === area}
+                  onClick={() => setArea(a)}
+                >
+                  {a === ALL ? "すべて" : a} {loading ? "" : count}
+                </button>
+              );
+            })}
+          </div>
+        </div>
       )}
 
       {categories.length > 1 && (
-        <div className={styles.chips} role="group" aria-label="事業者で絞り込み">
-          {[ALL, ...categories].map((c) => {
-            const count = c === ALL ? allItems.length : allItems.filter((i) => i.category === c).length;
-            return (
-              <button
-                key={c}
-                type="button"
-                className={`${styles.chip} ${c === activeFilter ? styles.chipActive : ""}`}
-                aria-pressed={c === activeFilter}
-                onClick={() => setFilter(c)}
-              >
-                {c === ALL ? "すべて" : c} {count}
-              </button>
-            );
-          })}
+        <div className={styles.chipRow}>
+          <span className={styles.chipLabel}>事業者</span>
+          <div className={styles.chips} role="group" aria-label="事業者で絞り込み">
+            {[ALL, ...categories].map((c) => {
+              const count = c === ALL ? areaItems.length : areaItems.filter((i) => i.category === c).length;
+              return (
+                <button
+                  key={c}
+                  type="button"
+                  className={`${styles.chip} ${c === activeFilter ? styles.chipActive : ""}`}
+                  aria-pressed={c === activeFilter}
+                  onClick={() => setFilter(c)}
+                >
+                  {c === ALL ? "すべて" : c} {count}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -144,7 +176,7 @@ export function GenreView({ genre }: { genre: GenreConfig }) {
         isMock={fetched?.isMock}
         notice={fetched?.notice}
         warnings={fetched?.warnings}
-        emptyMessage={genre.emptyMessage}
+        emptyMessage={emptyMessage}
       />
 
       {genre.footnote && <p className={styles.footnote}>{genre.footnote}</p>}

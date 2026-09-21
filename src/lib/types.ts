@@ -32,6 +32,8 @@ export type NormalizedItem = {
   severity?: Severity;
   // 絞り込み用の分類(電車なら事業者名)
   category?: string;
+  // 絞り込み用の地域(電車なら 首都圏 / 北関東・甲信越 / 東北)
+  area?: string;
   weather?: WeatherForecast;
   sourceName: string;
   sourceUrl: string;

@@ -67,6 +67,32 @@ const JR_EAST_NAMES: Record<string, string> = {
   YamagataShinkansen: "山形新幹線", AkitaShinkansen: "秋田新幹線",
 };
 
+// エリア名は genres.ts の train.areas と一致させる。JR東日本以外(地下鉄・私鉄)はすべて首都圏
+const AREA_METRO = "首都圏";
+const AREA_KITAKANTO_KOSHINETSU = "北関東・甲信越";
+const AREA_TOHOKU = "東北";
+
+const JR_EAST_METRO_LINES = new Set([
+  "Yamanote", "Chuo", "ChuoRapid", "ChuoSobuLocal", "Tokaido", "Yokosuka", "ShonanShinjuku", "Utsunomiya",
+  "Takasaki", "Joban", "JobanRapid", "JobanLocal", "Sobu", "SobuRapid", "Keiyo", "Musashino", "Nambu",
+  "NambuBranch", "Yokohama", "Tsurumi", "TsurumiUmiShibauraBranch", "TsurumiOkawaBranch", "Sagami", "Ome",
+  "Itsukaichi", "Hachiko", "Kawagoe", "SaikyoKawagoe", "KeihinTohokuNegishi", "SotetsuDirect", "Sotobo",
+  "Uchibo", "Narita", "NaritaAbikoBranch", "NaritaAirportBranch", "Kashima", "Togane", "Kururi", "Ito",
+]);
+
+const JR_EAST_KITAKANTO_KOSHINETSU_LINES = new Set([
+  "Mito", "Suigun", "SuigunBranch", "Ryomo", "Agatsuma", "Joetsu", "Nikko", "Karasuyama", "Koumi", "Shinonoi",
+  "Iiyama", "Oito", "Shinetsu", "Echigo", "Hakushin", "Yahiko", "JoetsuShinkansen", "HokurikuShinkansen",
+  "ChuoTatsunoBranch",
+]);
+
+// JR東日本の路線IDの末尾からエリアを決める。表にない新しい路線は東北扱い(初期表示の首都圏を汚さないため)
+function jrEastArea(railwaySuffixId: string): string {
+  if (JR_EAST_METRO_LINES.has(railwaySuffixId)) return AREA_METRO;
+  if (JR_EAST_KITAKANTO_KOSHINETSU_LINES.has(railwaySuffixId)) return AREA_KITAKANTO_KOSHINETSU;
+  return AREA_TOHOKU;
+}
+
 const KEY_ENV: Record<Tier, string> = {
   standard: "ODPT_CONSUMER_KEY",
   challenge: "ODPT_CHALLENGE_KEY",
@@ -166,7 +192,15 @@ async function fetchOperator(operator: Operator, key: string | undefined, url: s
     }
   }
 
-  type Entry = { railwayId?: string; lineTitle: string; status?: string; text: string; cause?: string; date: string };
+  type Entry = {
+    railwayId?: string;
+    lineTitle: string;
+    area: string;
+    status?: string;
+    text: string;
+    cause?: string;
+    date: string;
+  };
   const entries: Entry[] = [];
   for (const info of infos) {
     const status = info["odpt:trainInformationStatus"]?.ja?.trim() || undefined;
@@ -177,6 +211,7 @@ async function fetchOperator(operator: Operator, key: string | undefined, url: s
     entries.push({
       railwayId,
       lineTitle: railwayId ? resolveLineName(operator, railwayId, masterNames, text) : `${operator.name}全線`,
+      area: operator.useBuiltInNames && railwayId ? jrEastArea(railwaySuffix(railwayId)) : AREA_METRO,
       status,
       text,
       cause: info["odpt:trainInformationCause"]?.ja,
@@ -195,7 +230,7 @@ async function fetchOperator(operator: Operator, key: string | undefined, url: s
   // 東武のように、多数の路線に全く同じ文面(全線向けの注意喚起)が出ている場合は1件にまとめる
   const groups = new Map<string, Entry[]>();
   for (const e of entries) {
-    const key = `${e.status ?? ""}|${e.text}`;
+    const key = `${e.area}|${e.status ?? ""}|${e.text}`;
     groups.set(key, [...(groups.get(key) ?? []), e]);
   }
 
@@ -205,7 +240,8 @@ async function fetchOperator(operator: Operator, key: string | undefined, url: s
     if (group.length >= MERGE_THRESHOLD) {
       items.push({
         ...base,
-        id: `train:${operator.id}:${first.status ?? ""}:${first.text}`,
+        id: `train:${operator.id}:${first.area}:${first.status ?? ""}:${first.text}`,
+        area: first.area,
         title: `${operator.name} ${group.length}路線${first.status ? `: ${first.status}` : ""}`,
         body: `${bodyOf(first)}(対象: ${group
           .map((e) => (e.lineTitle.startsWith(operator.linePrefix) ? e.lineTitle.slice(operator.linePrefix.length) : e.lineTitle))
@@ -219,6 +255,7 @@ async function fetchOperator(operator: Operator, key: string | undefined, url: s
       items.push({
         ...base,
         id: `train:${e.railwayId ?? operator.id}`,
+        area: e.area,
         title: e.status ? `${e.lineTitle}: ${e.status}` : e.lineTitle,
         body: bodyOf(e),
         timestamp: e.date,
