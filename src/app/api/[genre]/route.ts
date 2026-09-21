@@ -28,7 +28,7 @@ export async function GET(
       result = await fetchQuake(target);
       break;
     case "train":
-      result = await fetchTrain(target);
+      result = await fetchTrain();
       break;
     case "traffic":
       result = await fetchTraffic(target);

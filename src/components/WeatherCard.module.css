@@ -1,0 +1,200 @@
+.card {
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid var(--card-border);
+  background: var(--card-bg);
+}
+
+.title {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.days {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 6px;
+  border-radius: 10px;
+  border: 1px solid var(--card-border);
+  background: var(--background);
+  min-width: 0;
+}
+
+.dayHead {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.3;
+}
+
+.dayLabel {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.dayDate {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.icon {
+  font-size: 44px;
+  line-height: 1.2;
+  margin: 6px 0 2px;
+}
+
+.text {
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.4;
+  min-height: 3em;
+  overflow-wrap: anywhere;
+}
+
+.temps {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-top: 8px;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.tempMax {
+  color: #dc2626;
+}
+
+.tempMin {
+  color: #2563eb;
+}
+
+.tempSep {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 14px;
+}
+
+.tempCaption,
+.rainCaption {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.sectionLabel {
+  align-self: stretch;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--card-border);
+  font-size: 10px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.pops {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  margin-top: 4px;
+}
+
+.popCol {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 44px;
+}
+
+.popValue {
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.popTrack {
+  display: flex;
+  align-items: flex-end;
+  width: 60%;
+  min-width: 10px;
+  height: 44px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  overflow: hidden;
+}
+
+.popFill {
+  width: 100%;
+  background: var(--accent);
+}
+
+.popLabel {
+  font-size: 9px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.rain {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 10px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.rainHeavy {
+  color: var(--severity-critical);
+}
+
+@media (max-width: 480px) {
+  .card {
+    padding: 12px;
+  }
+
+  .days {
+    gap: 6px;
+  }
+
+  .day {
+    padding: 8px 4px;
+  }
+
+  .icon {
+    font-size: 36px;
+  }
+
+  .temps {
+    font-size: 17px;
+  }
+
+  .pops {
+    gap: 2px;
+  }
+
+  .popValue {
+    font-size: 9px;
+    letter-spacing: -0.03em;
+  }
+
+  .popLabel {
+    font-size: 9px;
+  }
+}
+
+.note {
+  margin-top: 12px;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.5;
+}

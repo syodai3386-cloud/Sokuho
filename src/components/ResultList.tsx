@@ -1,5 +1,6 @@
 import type { NormalizedItem } from "@/lib/types";
 import styles from "./ResultList.module.css";
+import { WeatherCard } from "./WeatherCard";
 
 function severityClass(severity: NormalizedItem["severity"]) {
   if (severity === "critical") return styles.itemCritical;
@@ -26,23 +27,39 @@ export function ResultList({
   error,
   isMock,
   notice,
+  warnings,
+  emptyMessage,
 }: {
   items: NormalizedItem[];
   loading: boolean;
   error?: string;
   isMock?: boolean;
   notice?: string;
+  warnings?: string[];
+  emptyMessage?: string;
 }) {
   if (loading) {
     return <div className={styles.state}>取得中...</div>;
   }
 
+  const warningBanners = (warnings ?? []).map((w) => (
+    <div key={w} className={styles.mockBanner}>
+      {w}
+    </div>
+  ));
+
   if (error) {
-    return <div className={styles.state}>取得できませんでした: {error}</div>;
+    return (
+      <>
+        {warningBanners}
+        <div className={styles.state}>取得できませんでした: {error}</div>
+      </>
+    );
   }
 
   return (
     <>
+      {warningBanners}
       {isMock && (
         <div className={styles.mockBanner}>
           これはサンプルデータです。
@@ -50,19 +67,23 @@ export function ResultList({
         </div>
       )}
       {items.length === 0 ? (
-        <div className={styles.state}>該当する情報はありません。</div>
+        <div className={styles.state}>{emptyMessage ?? "該当する情報はありません。"}</div>
       ) : (
         <div className={styles.list}>
-          {items.map((item) => (
-            <div key={item.id} className={`${styles.item} ${severityClass(item.severity)}`}>
-              <div className={styles.itemTitle}>{item.title}</div>
-              <div className={styles.itemBody}>{item.body}</div>
-              <div className={styles.itemMeta}>
-                <span>{item.sourceName}</span>
-                <span>{formatTime(item.timestamp)}</span>
+          {items.map((item) =>
+            item.weather ? (
+              <WeatherCard key={item.id} item={item} />
+            ) : (
+              <div key={item.id} className={`${styles.item} ${severityClass(item.severity)}`}>
+                <div className={styles.itemTitle}>{item.title}</div>
+                <div className={styles.itemBody}>{item.body}</div>
+                <div className={styles.itemMeta}>
+                  <span>{item.sourceName}</span>
+                  <span>{formatTime(item.timestamp)}</span>
+                </div>
               </div>
-            </div>
-          ))}
+            ),
+          )}
         </div>
       )}
     </>

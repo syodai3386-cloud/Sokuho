@@ -1,5 +1,4 @@
 import { withCache } from "../cache";
-import { TRAIN_LINES } from "../genres";
 import type { GenreResult, NormalizedItem, Severity } from "../types";
 
 type OdptTrainInformation = {
@@ -10,6 +9,11 @@ type OdptTrainInformation = {
   "odpt:trainInformationCause"?: { ja?: string };
 };
 
+type OdptRailway = {
+  "owl:sameAs": string;
+  "odpt:railwayTitle"?: { ja?: string };
+};
+
 // standard: 通常のアクセストークン(ODPT_CONSUMER_KEY)で api.odpt.org から取得
 // challenge: 「公共交通オープンデータチャレンジ」限定データ。チャレンジにエントリーして得た
 //            トークン(ODPT_CHALLENGE_KEY)で api-challenge.odpt.org から取得
@@ -17,44 +21,50 @@ type Tier = "standard" | "challenge";
 
 type Operator = {
   id: string;
+  // 絞り込み用の表示名
   name: string;
+  // 路線名の前に付ける名前(路線名がすでにこれで始まる場合は付けない)
+  linePrefix: string;
   tier: Tier;
   // 認証なしで叩ける公開エンドポイントがある事業者のみ true
   hasPublicEndpoint: boolean;
+  // 路線マスタ(odpt:Railway)が取れない事業者は自前の対応表で路線名を補う
+  useBuiltInNames?: boolean;
 };
 
-const TOKYO_METRO: Operator = { id: "odpt.Operator:TokyoMetro", name: "東京メトロ", tier: "standard", hasPublicEndpoint: false };
-const TOEI: Operator = { id: "odpt.Operator:Toei", name: "都営地下鉄", tier: "standard", hasPublicEndpoint: true };
-const JR_EAST: Operator = { id: "odpt.Operator:jre-is", name: "JR東日本", tier: "challenge", hasPublicEndpoint: false };
-const TOKYU: Operator = { id: "odpt.Operator:Tokyu", name: "東急電鉄", tier: "challenge", hasPublicEndpoint: false };
-const KEIO: Operator = { id: "odpt.Operator:Keio", name: "京王電鉄", tier: "challenge", hasPublicEndpoint: false };
-const SEIBU: Operator = { id: "odpt.Operator:Seibu", name: "西武鉄道", tier: "challenge", hasPublicEndpoint: false };
-const TOBU: Operator = { id: "odpt.Operator:Tobu", name: "東武鉄道", tier: "challenge", hasPublicEndpoint: false };
+// 表示順もこの並びに従う
+const OPERATORS: Operator[] = [
+  { id: "odpt.Operator:jre-is", name: "JR東日本", linePrefix: "JR", tier: "challenge", hasPublicEndpoint: false, useBuiltInNames: true },
+  { id: "odpt.Operator:TokyoMetro", name: "東京メトロ", linePrefix: "東京メトロ", tier: "standard", hasPublicEndpoint: false },
+  { id: "odpt.Operator:Toei", name: "都営地下鉄", linePrefix: "都営", tier: "standard", hasPublicEndpoint: true },
+  { id: "odpt.Operator:Tokyu", name: "東急", linePrefix: "東急", tier: "challenge", hasPublicEndpoint: false },
+  { id: "odpt.Operator:Keio", name: "京王", linePrefix: "京王", tier: "challenge", hasPublicEndpoint: false },
+  { id: "odpt.Operator:Seibu", name: "西武", linePrefix: "西武", tier: "challenge", hasPublicEndpoint: false },
+  { id: "odpt.Operator:Tobu", name: "東武", linePrefix: "東武", tier: "challenge", hasPublicEndpoint: false },
+];
 
-// キーは genres.ts の TRAIN_LINES の value。railwayIds は odpt:railway と照合する候補ID。
-// ここに載せていない路線(小田急・京成)はODPTに運行情報の提供がないためサンプル表示。
-// railwayIds は実レスポンスで検証済み。照合できない場合は「路線IDの設定要確認」エラーになる。
-const ODPT_RAILWAYS: Record<string, { operator: Operator; railwayIds: string[] }> = {
-  marunouchi: { operator: TOKYO_METRO, railwayIds: ["odpt.Railway:TokyoMetro.Marunouchi"] },
-  ginza: { operator: TOKYO_METRO, railwayIds: ["odpt.Railway:TokyoMetro.Ginza"] },
-  hibiya: { operator: TOKYO_METRO, railwayIds: ["odpt.Railway:TokyoMetro.Hibiya"] },
-  tozai: { operator: TOKYO_METRO, railwayIds: ["odpt.Railway:TokyoMetro.Tozai"] },
-  chiyoda: { operator: TOKYO_METRO, railwayIds: ["odpt.Railway:TokyoMetro.Chiyoda"] },
-  "toei-asakusa": { operator: TOEI, railwayIds: ["odpt.Railway:Toei.Asakusa"] },
-  "toei-oedo": { operator: TOEI, railwayIds: ["odpt.Railway:Toei.Oedo"] },
-
-  yamanote: { operator: JR_EAST, railwayIds: ["odpt.Railway:JR-East.Yamanote"] },
-  chuo: { operator: JR_EAST, railwayIds: ["odpt.Railway:JR-East.ChuoRapid", "odpt.Railway:JR-East.Chuo"] },
-  keihintohoku: { operator: JR_EAST, railwayIds: ["odpt.Railway:JR-East.KeihinTohokuNegishi", "odpt.Railway:JR-East.KeihinTohoku"] },
-  tokaido: { operator: JR_EAST, railwayIds: ["odpt.Railway:JR-East.Tokaido"] },
-  sobu: { operator: JR_EAST, railwayIds: ["odpt.Railway:JR-East.SobuRapid", "odpt.Railway:JR-East.Sobu"] },
-  saikyo: { operator: JR_EAST, railwayIds: ["odpt.Railway:JR-East.SaikyoKawagoe"] },
-  joban: { operator: JR_EAST, railwayIds: ["odpt.Railway:JR-East.JobanRapid", "odpt.Railway:JR-East.Joban"] },
-
-  denentoshi: { operator: TOKYU, railwayIds: ["odpt.Railway:Tokyu.DenEnToshi"] },
-  keio: { operator: KEIO, railwayIds: ["odpt.Railway:Keio.Keio"] },
-  "seibu-ikebukuro": { operator: SEIBU, railwayIds: ["odpt.Railway:Seibu.Ikebukuro"] },
-  "tobu-tojo": { operator: TOBU, railwayIds: ["odpt.Railway:Tobu.Tojo"] },
+// JR東日本(jre-is)は odpt:Railway が取れないため、運行情報の路線ID(odpt.Railway:JR-East.xxx の xxx)に対応する路線名
+const JR_EAST_NAMES: Record<string, string> = {
+  Hachinohe: "八戸線", Kashima: "鹿島線", Narita: "成田線", NaritaAbikoBranch: "成田線(我孫子支線)",
+  NaritaAirportBranch: "成田線(空港支線)", Sobu: "総武本線", SobuRapid: "総武線快速", ChuoSobuLocal: "中央・総武線各駅停車",
+  Sotobo: "外房線", Uchibo: "内房線", Keiyo: "京葉線", Ito: "伊東線", Musashino: "武蔵野線", Togane: "東金線",
+  Suigun: "水郡線", SuigunBranch: "水郡線(支線)", Joban: "常磐線", JobanRapid: "常磐線快速", JobanLocal: "常磐線各駅停車",
+  Yokosuka: "横須賀線", Koumi: "小海線", Gono: "五能線", Mito: "水戸線", Hachiko: "八高線", Agatsuma: "吾妻線",
+  BanetsuWest: "磐越西線", BanetsuEast: "磐越東線", SensekiTohoku: "仙石東北ライン", Shinetsu: "信越本線",
+  Joetsu: "上越線", Ryomo: "両毛線", Hakushin: "白新線", Kururi: "久留里線", Utsunomiya: "宇都宮線",
+  Karasuyama: "烏山線", Ome: "青梅線", Yokohama: "横浜線", Yamanote: "山手線", Yahiko: "弥彦線", Nikko: "日光線",
+  Nambu: "南武線", NambuBranch: "南武線(支線)", Tokaido: "東海道線", Tsurumi: "鶴見線",
+  TsurumiUmiShibauraBranch: "鶴見線(海芝浦支線)", TsurumiOkawaBranch: "鶴見線(大川支線)", Shinonoi: "篠ノ井線",
+  Chuo: "中央本線", ChuoRapid: "中央線快速", ChuoTatsunoBranch: "中央本線(辰野支線)", Takasaki: "高崎線",
+  SotetsuDirect: "相鉄直通線", Iiyama: "飯山線", ShonanShinjuku: "湘南新宿ライン", Sagami: "相模線",
+  SaikyoKawagoe: "埼京線・川越線", KeihinTohokuNegishi: "京浜東北線・根岸線", Kawagoe: "川越線",
+  Itsukaichi: "五日市線", Yamada: "山田線", Kitakami: "北上線", Kamaishi: "釜石線", Ofunato: "大船渡線",
+  Tohoku: "東北本線", Hanawa: "花輪線", Tsugaru: "津軽線", Uetsu: "羽越本線", Ou: "奥羽本線",
+  OuYamagata: "奥羽本線(山形線)", Oga: "男鹿線", Tadami: "只見線", Yonesaka: "米坂線", Aterazawa: "左沢線",
+  Kesennuma: "気仙沼線", Ishinomaki: "石巻線", RikuEast: "陸羽東線", RikuWest: "陸羽西線", Oito: "大糸線",
+  Echigo: "越後線", Senseki: "仙石線", Senzan: "仙山線", Ominato: "大湊線", Tazawako: "田沢湖線",
+  HokurikuShinkansen: "北陸新幹線", JoetsuShinkansen: "上越新幹線", TohokuShinkansen: "東北新幹線",
+  YamagataShinkansen: "山形新幹線", AkitaShinkansen: "秋田新幹線",
 };
 
 const KEY_ENV: Record<Tier, string> = {
@@ -62,125 +72,212 @@ const KEY_ENV: Record<Tier, string> = {
   challenge: "ODPT_CHALLENGE_KEY",
 };
 
-const TTL_MS = 60_000;
+const INFO_TTL_MS = 60_000;
+const RAILWAY_TTL_MS = 6 * 60 * 60_000;
 const SOURCE_URL = "https://developer.odpt.org/";
+const MERGE_THRESHOLD = 4;
+const SEVERE = /見合わせ|運休|運転中止/;
+const NORMAL_TEXT = /平常(通り|どおり)?(運転|運行)|遅延はありません|遅れはありません/;
 
 function getKey(tier: Tier): string | undefined {
   return process.env[KEY_ENV[tier]]?.trim() || undefined;
 }
 
-function buildUrl(operator: Operator, key: string | undefined): string | null {
+function buildUrl(operator: Operator, resource: string, key: string | undefined): string | null {
   const query = `odpt:operator=${encodeURIComponent(operator.id)}`;
   const host = operator.tier === "challenge" ? "api-challenge.odpt.org" : "api.odpt.org";
   if (key) {
-    return `https://${host}/api/v4/odpt:TrainInformation?${query}&acl:consumerKey=${encodeURIComponent(key)}`;
+    return `https://${host}/api/v4/${resource}?${query}&acl:consumerKey=${encodeURIComponent(key)}`;
   }
   if (operator.hasPublicEndpoint) {
-    return `https://api-public.odpt.org/api/v4/odpt:TrainInformation?${query}`;
+    return `https://api-public.odpt.org/api/v4/${resource}?${query}`;
   }
   return null;
 }
 
-const SEVERE = /見合わせ|運休|運転中止/;
+async function fetchOdpt<T>(url: string, tier: Tier): Promise<T[]> {
+  const res = await fetch(url, { next: { revalidate: 60 } });
+  if (res.status === 401 || res.status === 403) {
+    throw new Error(`アクセストークンが無効、またはこのデータの利用権限がありません(${KEY_ENV[tier]} を確認してください)`);
+  }
+  if (!res.ok) {
+    throw new Error(`ODPT APIが ${res.status} を返しました`);
+  }
+  return (await res.json()) as T[];
+}
 
 function severityOf(status: string | undefined, text: string): Severity {
   const s = status ?? "";
   if (SEVERE.test(s)) return "critical";
   // 「お知らせ」は台風などの事前注意喚起が多く、実際の運休とは限らない
   if (s === "お知らせ") return /遅れ|遅延|運休|見合わせ/.test(text) ? "warning" : "info";
-  const confirmedSevere = SEVERE.test(text) && !/場合があります|可能性/.test(text);
-  if (confirmedSevere) return "critical";
-  return s ? "warning" : "info";
+  if (SEVERE.test(text) && !/場合があります|可能性/.test(text)) return "critical";
+  return "warning";
 }
 
-function mockResult(lineValue: string, lineLabel: string, notice: string): GenreResult {
-  const item: NormalizedItem = {
-    id: `train:mock:${lineValue}`,
-    genre: "train",
-    title: `[サンプル] ${lineLabel} は平常運転です`,
-    body: "この路線の運行情報は取得していないため、サンプルデータを表示しています。",
-    timestamp: new Date().toISOString(),
-    sourceName: "サンプルデータ",
+// 一部の路線は同じ文が2回連結されて届く(東武など)ので、1回分にする
+function dedupeRepeatedText(text: string): string {
+  const t = text.trim();
+  return t.match(/^([\s\S]{20,}?)\s+\1$/)?.[1] ?? t;
+}
+
+function railwaySuffix(railwayId: string): string {
+  return railwayId.split(".").pop() ?? railwayId;
+}
+
+function resolveLineName(
+  operator: Operator,
+  railwayId: string,
+  masterNames: Record<string, string>,
+  text: string,
+): string {
+  const name =
+    masterNames[railwayId] ??
+    (operator.useBuiltInNames ? JR_EAST_NAMES[railwaySuffix(railwayId)] : undefined) ??
+    text.match(/^([^、。]{2,20}?)は、/)?.[1] ??
+    railwaySuffix(railwayId);
+  return name.startsWith(operator.linePrefix) ? name : `${operator.linePrefix}${name}`;
+}
+
+async function fetchOperator(operator: Operator, key: string | undefined, url: string): Promise<NormalizedItem[]> {
+  const authMode = key ? "auth" : "public";
+
+  const infos = await withCache(`train:info:${operator.id}:${authMode}`, INFO_TTL_MS, () =>
+    fetchOdpt<OdptTrainInformation>(url, operator.tier),
+  );
+
+  let masterNames: Record<string, string> = {};
+  if (!operator.useBuiltInNames) {
+    const railwayUrl = buildUrl(operator, "odpt:Railway", key);
+    if (railwayUrl) {
+      try {
+        const railways = await withCache(`train:railway:${operator.id}:${authMode}`, RAILWAY_TTL_MS, () =>
+          fetchOdpt<OdptRailway>(railwayUrl, operator.tier),
+        );
+        masterNames = Object.fromEntries(
+          railways.flatMap((r) => {
+            const title = r["odpt:railwayTitle"]?.ja;
+            return title ? [[r["owl:sameAs"], title]] : [];
+          }),
+        );
+      } catch {
+        // 路線名が取れなくても運行情報自体は表示できる(文面の先頭から路線名を推定する)
+      }
+    }
+  }
+
+  type Entry = { railwayId?: string; lineTitle: string; status?: string; text: string; cause?: string; date: string };
+  const entries: Entry[] = [];
+  for (const info of infos) {
+    const status = info["odpt:trainInformationStatus"]?.ja?.trim() || undefined;
+    const text = dedupeRepeatedText(info["odpt:trainInformationText"]?.ja ?? "詳細情報なし");
+    if (!status && NORMAL_TEXT.test(text)) continue;
+
+    const railwayId = info["odpt:railway"];
+    entries.push({
+      railwayId,
+      lineTitle: railwayId ? resolveLineName(operator, railwayId, masterNames, text) : `${operator.name}全線`,
+      status,
+      text,
+      cause: info["odpt:trainInformationCause"]?.ja,
+      date: info["dc:date"],
+    });
+  }
+
+  const base = {
+    genre: "train" as const,
+    category: operator.name,
+    sourceName: `${operator.name}(公共交通オープンデータセンター)`,
     sourceUrl: SOURCE_URL,
   };
-  return { ok: true, items: [item], isMock: true, notice };
+  const bodyOf = (e: Entry) => (e.cause ? `${e.text}(原因: ${e.cause})` : e.text);
+
+  // 東武のように、多数の路線に全く同じ文面(全線向けの注意喚起)が出ている場合は1件にまとめる
+  const groups = new Map<string, Entry[]>();
+  for (const e of entries) {
+    const key = `${e.status ?? ""}|${e.text}`;
+    groups.set(key, [...(groups.get(key) ?? []), e]);
+  }
+
+  const items: NormalizedItem[] = [];
+  for (const group of groups.values()) {
+    const first = group[0];
+    if (group.length >= MERGE_THRESHOLD) {
+      items.push({
+        ...base,
+        id: `train:${operator.id}:${first.status ?? ""}:${first.text}`,
+        title: `${operator.name} ${group.length}路線${first.status ? `: ${first.status}` : ""}`,
+        body: `${bodyOf(first)}(対象: ${group
+          .map((e) => (e.lineTitle.startsWith(operator.linePrefix) ? e.lineTitle.slice(operator.linePrefix.length) : e.lineTitle))
+          .join("、")})`,
+        timestamp: group.reduce((latest, e) => (e.date > latest ? e.date : latest), first.date),
+        severity: severityOf(first.status, first.text),
+      });
+      continue;
+    }
+    for (const e of group) {
+      items.push({
+        ...base,
+        id: `train:${e.railwayId ?? operator.id}`,
+        title: e.status ? `${e.lineTitle}: ${e.status}` : e.lineTitle,
+        body: bodyOf(e),
+        timestamp: e.date,
+        severity: severityOf(e.status, e.text),
+      });
+    }
+  }
+  return items;
 }
 
-export async function fetchTrain(lineValue: string): Promise<GenreResult> {
-  const line = TRAIN_LINES.find((l) => l.value === lineValue);
-  const lineLabel = line?.label ?? lineValue;
+const SEVERITY_ORDER: Record<Severity, number> = { critical: 0, warning: 1, info: 2 };
 
-  const target = ODPT_RAILWAYS[lineValue];
-  if (!target) {
-    return mockResult(
-      lineValue,
-      lineLabel,
-      "この路線の運行情報はODPT(公共交通オープンデータセンター)で提供されていないため、サンプルデータを表示しています。",
-    );
-  }
+export async function fetchTrain(): Promise<GenreResult> {
+  const warnings: string[] = [];
+  const skippedByEnv = new Map<string, string[]>();
 
-  const { operator } = target;
-  const key = getKey(operator.tier);
-  const url = buildUrl(operator, key);
-  if (!url) {
-    return mockResult(
-      lineValue,
-      lineLabel,
-      operator.tier === "challenge"
-        ? `${operator.name}の運行情報は「公共交通オープンデータチャレンジ」限定データです。チャレンジにエントリーして得たトークンを環境変数 ${KEY_ENV.challenge} に設定すると表示されます(詳細はREADME参照)。`
-        : `ODPTのアクセストークン(環境変数 ${KEY_ENV.standard})が未設定のため、サンプルデータを表示しています。`,
-    );
-  }
-
-  try {
-    const data = await withCache(`train:${operator.id}:${key ? "auth" : "public"}`, TTL_MS, async () => {
-      const res = await fetch(url, { next: { revalidate: 60 } });
-      if (res.status === 401 || res.status === 403) {
-        throw new Error(`ODPTのアクセストークンが無効、またはこのデータの利用権限がありません。${KEY_ENV[operator.tier]} を確認してください`);
-      }
-      if (!res.ok) {
-        throw new Error(`ODPT APIが ${res.status} を返しました`);
-      }
-      return (await res.json()) as OdptTrainInformation[];
-    });
-
-    let matched = data.filter((info) => {
-      const railway = info["odpt:railway"];
-      return railway != null && target.railwayIds.includes(railway);
-    });
-
-    // 西武のように路線別ではなく事業者全体の1件だけを返す事業者は、その全線情報で代用する
-    const operatorWide = matched.length === 0 && data.every((info) => info["odpt:railway"] == null);
-    if (operatorWide) matched = data;
-
-    if (matched.length === 0) {
-      throw new Error(
-        `ODPTの応答に${lineLabel}の情報が見つかりませんでした(路線IDの設定を確認してください: ${target.railwayIds.join(", ")})`,
-      );
+  const targets: { operator: Operator; key: string | undefined; url: string }[] = [];
+  for (const operator of OPERATORS) {
+    const key = getKey(operator.tier);
+    const url = buildUrl(operator, "odpt:TrainInformation", key);
+    if (!url) {
+      const env = KEY_ENV[operator.tier];
+      skippedByEnv.set(env, [...(skippedByEnv.get(env) ?? []), operator.name]);
+      continue;
     }
-
-    const items: NormalizedItem[] = matched.map((info) => {
-      const status = info["odpt:trainInformationStatus"]?.ja;
-      const cause = info["odpt:trainInformationCause"]?.ja;
-      const text = info["odpt:trainInformationText"]?.ja ?? "詳細情報なし";
-      return {
-        id: `train:${info["odpt:railway"]}`,
-        genre: "train",
-        title: status ? `${lineLabel}: ${status}` : lineLabel,
-        body: `${operatorWide ? `${operator.name}全線の情報: ` : ""}${cause ? `${text}(原因: ${cause})` : text}`,
-        timestamp: info["dc:date"],
-        severity: severityOf(status, text),
-        sourceName: `${operator.name}(公共交通オープンデータセンター)`,
-        sourceUrl: SOURCE_URL,
-      };
-    });
-
-    return { ok: true, items };
-  } catch (err) {
-    return {
-      ok: false,
-      items: [],
-      error: err instanceof Error ? err.message : "運行情報の取得に失敗しました",
-    };
+    targets.push({ operator, key, url });
   }
+  for (const [env, names] of skippedByEnv) {
+    warnings.push(`${names.join("・")}の運行情報は、環境変数 ${env} が未設定のため表示していません(詳細はREADME参照)。`);
+  }
+
+  if (targets.length === 0) {
+    return { ok: false, items: [], warnings, error: "ODPTのアクセストークンが設定されていません" };
+  }
+
+  const settled = await Promise.allSettled(targets.map((t) => fetchOperator(t.operator, t.key, t.url)));
+
+  const items: NormalizedItem[] = [];
+  const failures: string[] = [];
+  settled.forEach((result, i) => {
+    if (result.status === "fulfilled") {
+      items.push(...result.value);
+    } else {
+      const reason = result.reason instanceof Error ? result.reason.message : "取得に失敗しました";
+      failures.push(`${targets[i].operator.name}の運行情報を取得できませんでした: ${reason}`);
+    }
+  });
+
+  if (failures.length === targets.length) {
+    return { ok: false, items: [], warnings, error: failures.join(" / ") };
+  }
+  warnings.push(...failures);
+
+  const operatorIndex = (item: NormalizedItem) => OPERATORS.findIndex((o) => o.name === item.category);
+  items.sort(
+    (a, b) =>
+      SEVERITY_ORDER[a.severity ?? "info"] - SEVERITY_ORDER[b.severity ?? "info"] ||
+      operatorIndex(a) - operatorIndex(b),
+  );
+
+  return { ok: true, items, warnings };
 }

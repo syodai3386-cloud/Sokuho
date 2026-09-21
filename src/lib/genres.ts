@@ -12,6 +12,14 @@ export type GenreConfig = {
   description: string;
   inputLabel: string;
   options: GenreOption[];
+  // 最初に選ばれている選択肢(未指定なら options の先頭)
+  defaultValue?: string;
+  // true なら選択欄を出さず、開いた時点で options[0] の内容を自動表示する
+  autoLoad?: boolean;
+  // 結果一覧の下に常に出す補足
+  footnote?: string;
+  // 結果が0件のときの文言
+  emptyMessage?: string;
   needsRegistration?: {
     serviceName: string;
     url: string;
@@ -115,31 +123,6 @@ export const QUAKE_REGIONS: { value: string; label: string; keywords: string[] }
   },
 ];
 
-// 主要路線。ODPTから実データを取得できる路線は sources/train.ts の ODPT_RAILWAYS が
-// 決める(それ以外はサンプル表示)。
-export const TRAIN_LINES: GenreOption[] = [
-  { value: "yamanote", label: "JR山手線" },
-  { value: "chuo", label: "JR中央線快速" },
-  { value: "keihintohoku", label: "JR京浜東北線" },
-  { value: "tokaido", label: "JR東海道線" },
-  { value: "sobu", label: "JR総武線快速" },
-  { value: "saikyo", label: "JR埼京線" },
-  { value: "joban", label: "JR常磐線" },
-  { value: "marunouchi", label: "東京メトロ丸ノ内線" },
-  { value: "ginza", label: "東京メトロ銀座線" },
-  { value: "hibiya", label: "東京メトロ日比谷線" },
-  { value: "tozai", label: "東京メトロ東西線" },
-  { value: "chiyoda", label: "東京メトロ千代田線" },
-  { value: "toei-asakusa", label: "都営浅草線" },
-  { value: "toei-oedo", label: "都営大江戸線" },
-  { value: "denentoshi", label: "東急田園都市線" },
-  { value: "odakyu", label: "小田急小田原線" },
-  { value: "keio", label: "京王線" },
-  { value: "seibu-ikebukuro", label: "西武池袋線" },
-  { value: "tobu-tojo", label: "東武東上線" },
-  { value: "keisei", label: "京成本線" },
-];
-
 // JARTIC登録後に実データへ切り替える想定の主要路線(MVPはモック表示)
 export const EXPRESSWAYS: GenreOption[] = [
   { value: "tomei", label: "東名高速道路" },
@@ -162,6 +145,7 @@ export const GENRES: GenreConfig[] = [
     description: "気象庁の発表する都道府県別の天気予報",
     inputLabel: "都道府県を選択",
     options: WEATHER_AREAS,
+    defaultValue: "140000", // 神奈川県
   },
   {
     id: "quake",
@@ -175,9 +159,13 @@ export const GENRES: GenreConfig[] = [
     id: "train",
     label: "電車遅延",
     emoji: "🚃",
-    description: "主要路線の運行情報",
-    inputLabel: "路線を選択",
-    options: TRAIN_LINES,
+    description: "遅延・運休などの情報が出ている路線",
+    inputLabel: "",
+    options: [{ value: "all", label: "全路線" }],
+    autoLoad: true,
+    emptyMessage: "現在、運行情報が出ている路線はありません。",
+    footnote:
+      "ここに表示されていない路線は、現在運行情報が出ていません(平常運転)。対象はJR東日本・東京メトロ・都営地下鉄・東急・京王・西武・東武です。小田急線・京成線は、データ提供元(ODPT)に運行情報がないため対象外です。",
   },
   {
     id: "traffic",
