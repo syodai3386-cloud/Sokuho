@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "速報ハブ",
-  description: "電車遅延・渋滞・地震/災害・天気をジャンル別に一元確認できる速報情報アプリ",
+  description: "電車遅延・渋滞・地震・天気をジャンル別に一元確認できる速報情報アプリ",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

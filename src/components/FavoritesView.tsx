@@ -1,11 +1,12 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { type FavoriteLine, type FavoritePlace, placeKey, useFavorites } from "@/lib/favorites";
 import { GENRES, getGenreConfig } from "@/lib/genres";
 import type { GenreResult, LineStatus } from "@/lib/types";
 import { PlacePicker } from "./PlacePicker";
+import { Banner, PageShell, cx } from "./ui";
+import ui from "./ui.module.css";
 import styles from "./FavoritesView.module.css";
 
 const ALL = "all";
@@ -15,6 +16,32 @@ const TRAIN_DEFAULT_AREA = getGenreConfig("train")?.defaultArea ?? ALL;
 
 // 天気・電車以外で、初期選択を設定できるジャンル
 const SELECT_GENRES = GENRES.filter((g) => !g.autoLoad && g.id !== "weather");
+
+function RemovableChips({
+  items,
+  onRemove,
+}: {
+  items: { key: string; label: string }[];
+  onRemove: (key: string) => void;
+}) {
+  return (
+    <ul className={styles.chipList}>
+      {items.map((item) => (
+        <li key={item.key} className={styles.chip}>
+          <span>{item.label}</span>
+          <button
+            type="button"
+            className={styles.chipRemove}
+            aria-label={`${item.label}を削除`}
+            onClick={() => onRemove(item.key)}
+          >
+            ×
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 export function FavoritesView() {
   const { favorites, ready, update } = useFavorites();
@@ -84,56 +111,47 @@ export function FavoritesView() {
   const trainArea = favorites.trainArea ?? TRAIN_DEFAULT_AREA;
 
   return (
-    <main className={styles.main}>
-      <Link href="/" className={styles.back}>
-        ← ホームに戻る
-      </Link>
-      <h1 className={styles.title}>お気に入り設定</h1>
-      <p className={styles.lead}>
-        よく見る地点や路線を設定すると、各ページを開いたときに最初に表示されます。設定はこのブラウザに保存され、変更するとすぐに反映されます(ほかの端末やブラウザとは共有されません)。
-      </p>
+    <PageShell
+      emoji="★"
+      title="お気に入り設定"
+      back={{ href: "/", label: "ホームに戻る" }}
+      subtitle="よく見る地点や路線を設定すると、各ページを開いたときに最初に表示されます。設定はこのブラウザに保存され、変更するとすぐに反映されます(ほかの端末やブラウザとは共有されません)。"
+    >
       {saveFailed && (
-        <div className={styles.error}>
+        <Banner error>
           設定を保存できませんでした。ブラウザのサイトデータの保存が無効になっている可能性があります。
-        </div>
+        </Banner>
       )}
 
-      <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>☀️ 天気</h2>
-        <p className={styles.help}>
+      <section className={cx(ui.card, ui.section)}>
+        <div className={ui.sectionHead}>
+          <h2 className={ui.sectionTitle}>☀️ 天気</h2>
+        </div>
+        <p className={cx(ui.help, styles.gap)}>
           お気に入りの地点は、天気ページを開くとまとめて表示されます。何も設定しないときは神奈川県を表示します。
         </p>
         {ready && favorites.weatherPlaces.length === 0 ? (
-          <p className={styles.empty}>まだ設定されていません。</p>
+          <p className={cx(ui.help, styles.gap)}>まだ設定されていません。</p>
         ) : (
-          <ul className={styles.chipList}>
-            {favorites.weatherPlaces.map((p) => (
-              <li key={placeKey(p)} className={styles.chip}>
-                <span>{p.label}</span>
-                <button
-                  type="button"
-                  className={styles.chipRemove}
-                  aria-label={`${p.label}を削除`}
-                  onClick={() => removePlace(placeKey(p))}
-                >
-                  ×
-                </button>
-              </li>
-            ))}
-          </ul>
+          <RemovableChips
+            items={favorites.weatherPlaces.map((p) => ({ key: placeKey(p), label: p.label }))}
+            onRemove={removePlace}
+          />
         )}
         <PlacePicker onAdd={addPlace} addLabel="お気に入りに追加" />
       </section>
 
-      <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>🚃 電車</h2>
+      <section className={cx(ui.card, ui.section)}>
+        <div className={ui.sectionHead}>
+          <h2 className={ui.sectionTitle}>🚃 電車</h2>
+        </div>
 
-        <label className={styles.fieldLabel} htmlFor="train-area">
+        <label className={ui.fieldLabel} htmlFor="train-area">
           最初に表示するエリア
         </label>
         <select
           id="train-area"
-          className={styles.select}
+          className={ui.select}
           value={trainArea}
           onChange={(e) => save((c) => ({ ...c, trainArea: e.target.value }))}
         >
@@ -144,33 +162,22 @@ export function FavoritesView() {
           ))}
         </select>
 
-        <div className={styles.fieldLabel}>お気に入り路線</div>
-        <p className={styles.help}>
+        <div className={ui.fieldLabel}>お気に入り路線</div>
+        <p className={cx(ui.help, styles.gap)}>
           電車ページの一番上に、選んだ路線の現在の状態(平常運転・遅れ・運休など)を常に表示します。
         </p>
         {ready && favorites.trainLines.length === 0 ? (
-          <p className={styles.empty}>まだ設定されていません。</p>
+          <p className={cx(ui.help, styles.gap)}>まだ設定されていません。</p>
         ) : (
-          <ul className={styles.chipList}>
-            {favorites.trainLines.map((l) => (
-              <li key={l.id} className={styles.chip}>
-                <span>{l.title}</span>
-                <button
-                  type="button"
-                  className={styles.chipRemove}
-                  aria-label={`${l.title}を削除`}
-                  onClick={() => toggleLine(l)}
-                >
-                  ×
-                </button>
-              </li>
-            ))}
-          </ul>
+          <RemovableChips
+            items={favorites.trainLines.map((l) => ({ key: l.id, label: l.title }))}
+            onRemove={(id) => save((c) => ({ ...c, trainLines: c.trainLines.filter((l) => l.id !== id) }))}
+          />
         )}
 
         <div className={styles.filters}>
           <select
-            className={styles.select}
+            className={cx(ui.select, styles.filterField)}
             aria-label="路線を探すエリア"
             value={candidateArea}
             onChange={(e) => setCandidateArea(e.target.value)}
@@ -183,7 +190,7 @@ export function FavoritesView() {
           </select>
           <input
             type="search"
-            className={styles.input}
+            className={cx(ui.input, styles.filterField)}
             placeholder="路線名で検索"
             aria-label="路線名で検索"
             value={search}
@@ -192,11 +199,11 @@ export function FavoritesView() {
         </div>
 
         {catalogError ? (
-          <div className={styles.error}>{catalogError}</div>
+          <Banner error>{catalogError}</Banner>
         ) : !catalog ? (
-          <p className={styles.empty}>路線の一覧を読み込み中...</p>
+          <p className={ui.help}>路線の一覧を読み込み中...</p>
         ) : candidates.length === 0 ? (
-          <p className={styles.empty}>該当する路線がありません。</p>
+          <p className={ui.help}>該当する路線がありません。</p>
         ) : (
           <div className={styles.lineGroups}>
             {operators.map((op) => (
@@ -221,20 +228,24 @@ export function FavoritesView() {
       </section>
 
       {SELECT_GENRES.length > 0 && (
-        <section className={styles.section}>
-          <h2 className={styles.sectionTitle}>そのほか</h2>
+        <section className={cx(ui.card, ui.section)}>
+          <div className={ui.sectionHead}>
+            <h2 className={ui.sectionTitle}>そのほか</h2>
+          </div>
           {SELECT_GENRES.map((g) => (
-            <div key={g.id} className={styles.field}>
-              <label className={styles.fieldLabel} htmlFor={`default-${g.id}`}>
+            <div key={g.id}>
+              <label className={ui.fieldLabel} htmlFor={`default-${g.id}`}>
                 {g.emoji} {g.label}: 最初に選んでおく{g.inputLabel.replace(/を選択$/, "")}
               </label>
               <select
                 id={`default-${g.id}`}
-                className={styles.select}
+                className={ui.select}
                 value={favorites.defaults[g.id] ?? ""}
                 onChange={(e) => setDefault(g.id, e.target.value)}
               >
-                <option value="">指定しない(標準: {g.options.find((o) => o.value === (g.defaultValue ?? g.options[0]?.value))?.label})</option>
+                <option value="">
+                  指定しない(標準: {g.options.find((o) => o.value === (g.defaultValue ?? g.options[0]?.value))?.label})
+                </option>
                 {g.options.map((o) => (
                   <option key={o.value} value={o.value}>
                     {o.label}
@@ -246,9 +257,9 @@ export function FavoritesView() {
         </section>
       )}
 
-      <button type="button" className={styles.reset} onClick={reset}>
+      <button type="button" className={cx(ui.btn, ui.btnDanger)} onClick={reset}>
         設定をすべて消して初期状態に戻す
       </button>
-    </main>
+    </PageShell>
   );
 }

@@ -1,12 +1,7 @@
 import type { NormalizedItem } from "@/lib/types";
-import styles from "./ResultList.module.css";
 import { WeatherCard } from "./WeatherCard";
-
-function severityClass(severity: NormalizedItem["severity"]) {
-  if (severity === "critical") return styles.itemCritical;
-  if (severity === "warning") return styles.itemWarning;
-  return styles.itemInfo;
-}
+import { Badge, Banner, StateBox, cx } from "./ui";
+import ui from "./ui.module.css";
 
 function formatTime(iso: string) {
   try {
@@ -39,49 +34,48 @@ export function ResultList({
   emptyMessage?: string;
 }) {
   if (loading) {
-    return <div className={styles.state}>取得中...</div>;
+    return <StateBox>取得中...</StateBox>;
   }
 
-  const warningBanners = (warnings ?? []).map((w) => (
-    <div key={w} className={styles.mockBanner}>
-      {w}
-    </div>
-  ));
+  const banners = (warnings ?? []).map((w) => <Banner key={w}>{w}</Banner>);
 
   if (error) {
     return (
       <>
-        {warningBanners}
-        <div className={styles.state}>取得できませんでした: {error}</div>
+        {banners}
+        <StateBox>取得できませんでした: {error}</StateBox>
       </>
     );
   }
 
   return (
     <>
-      {warningBanners}
+      {banners}
       {isMock && (
-        <div className={styles.mockBanner}>
+        <Banner>
           これはサンプルデータです。
           {notice ?? "実データを表示するには開発者登録が必要です（詳細はREADME参照）。"}
-        </div>
+        </Banner>
       )}
       {items.length === 0 ? (
-        <div className={styles.state}>{emptyMessage ?? "該当する情報はありません。"}</div>
+        <StateBox>{emptyMessage ?? "該当する情報はありません。"}</StateBox>
       ) : (
-        <div className={styles.list}>
+        <div className={ui.stack}>
           {items.map((item) =>
             item.weather ? (
               <WeatherCard key={item.id} item={item} />
             ) : (
-              <div key={item.id} className={`${styles.item} ${severityClass(item.severity)}`}>
-                <div className={styles.itemTitle}>{item.title}</div>
-                <div className={styles.itemBody}>{item.body}</div>
-                <div className={styles.itemMeta}>
+              <article key={item.id} className={cx(ui.card, ui.item)}>
+                <div className={ui.itemHead}>
+                  <h2 className={ui.itemTitle}>{item.title}</h2>
+                  {item.badge && <Badge tone={item.severity ?? "info"}>{item.badge}</Badge>}
+                </div>
+                <p className={ui.itemBody}>{item.body}</p>
+                <div className={ui.itemMeta}>
                   <span>{item.sourceName}</span>
                   <span>{formatTime(item.timestamp)}</span>
                 </div>
-              </div>
+              </article>
             ),
           )}
         </div>

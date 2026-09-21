@@ -112,6 +112,60 @@ function areaOf(operator: Operator, suffix: string): string {
   }
   return AREA_METRO;
 }
+// 首都圏の中心に近い路線ほど小さい値にして、一覧の上に出す(利用者の大半は中心部の路線を使うため)。
+//   1: 都心の中核(山手線・京浜東北線・中央線快速など、東京メトロ、都営の主要4路線)
+//   2: 主要な私鉄・JRの幹線(東急・京王・西武・東武の本線、常磐線・総武本線・高崎線など)
+//   3: 郊外・支線(上記以外の首都圏の路線)
+// 首都圏以外のエリアは、エリアごとの重み(下の AREA_RANK)を足して、首都圏より後ろにする。
+const AREA_RANK: Record<string, number> = {
+  [AREA_METRO]: 0,
+  [AREA_KITAKANTO_KOSHINETSU]: 10,
+  [AREA_TOHOKU]: 20,
+  [AREA_OTHER]: 30,
+};
+
+const JR_EAST_CORE_LINES = new Set([
+  "Yamanote", "KeihinTohokuNegishi", "ChuoRapid", "ChuoSobuLocal", "SaikyoKawagoe", "ShonanShinjuku", "Tokaido",
+  "Yokosuka", "SobuRapid", "JobanRapid", "JobanLocal", "Keiyo", "Musashino", "Nambu", "Yokohama",
+]);
+const JR_EAST_MAJOR_LINES = new Set([
+  "Joban", "Sobu", "Takasaki", "Utsunomiya", "Ome", "Sagami", "Tsurumi", "Kawagoe", "SotetsuDirect", "NambuBranch",
+  "Itsukaichi", "Hachiko", "Narita",
+]);
+
+// 事業者ごとの、中核(1)・主要(2)の路線。ここにない路線は郊外・支線(3)
+const CORE_LINES_BY_OPERATOR: Record<string, { core?: string[]; major?: string[] }> = {
+  "odpt.Operator:TokyoMetro": {
+    core: ["Marunouchi", "Ginza", "Hibiya", "Tozai", "Chiyoda", "Yurakucho", "Hanzomon", "Namboku", "Fukutoshin"],
+    major: ["MarunouchiBranch"],
+  },
+  "odpt.Operator:Toei": { core: ["Asakusa", "Mita", "Shinjuku", "Oedo"], major: ["Arakawa", "NipporiToneri"] },
+  "odpt.Operator:Tokyu": {
+    major: ["Toyoko", "DenEnToshi", "Meguro", "Oimachi", "TokyuShinYokohama", "Ikegami", "TokyuTamagawa"],
+  },
+  "odpt.Operator:Keio": { major: ["Keio", "KeioNew", "Inokashira", "Sagamihara"] },
+  "odpt.Operator:Seibu": { major: ["Ikebukuro", "Shinjuku"] },
+  "odpt.Operator:Tobu": { major: ["TobuSkytree", "TobuSkytreeBranch", "Tojo", "TobuUrbanPark"] },
+};
+
+// 路線の並び順の重み(小さいほど首都圏の中心に近い)
+// 同じ段階の中では、上の表に書いた順(都心に近い順)に並べる(小数部で表す)
+function rankOf(operator: Operator, suffix: string, area: string): number {
+  const core = operator.useBuiltInNames ? [...JR_EAST_CORE_LINES] : (CORE_LINES_BY_OPERATOR[operator.id]?.core ?? []);
+  const major = operator.useBuiltInNames ? [...JR_EAST_MAJOR_LINES] : (CORE_LINES_BY_OPERATOR[operator.id]?.major ?? []);
+
+  let tier = 3;
+  let order = 0;
+  if (core.includes(suffix)) {
+    tier = 1;
+    order = core.indexOf(suffix);
+  } else if (major.includes(suffix)) {
+    tier = 2;
+    order = major.indexOf(suffix);
+  }
+  return (AREA_RANK[area] ?? 40) + tier + order / 100;
+}
+
 const KEY_ENV: Record<Tier, string> = {
   standard: "ODPT_CONSUMER_KEY",
   challenge: "ODPT_CHALLENGE_KEY",
@@ -250,6 +304,7 @@ type Assessed = {
   railwayId?: string;
   lineTitle: string;
   area: string;
+  rank: number;
   trouble: ReturnType<typeof assessTrouble>;
   text: string;
   cause?: string;
@@ -292,10 +347,12 @@ async function fetchOperator(
     const status = info["odpt:trainInformationStatus"]?.ja?.trim() || undefined;
     const text = dedupeRepeatedText(info["odpt:trainInformationText"]?.ja ?? "詳細情報なし");
     const railwayId = info["odpt:railway"];
+    const area = railwayId ? areaOf(operator, railwaySuffix(railwayId)) : AREA_METRO;
     return {
       railwayId,
       lineTitle: railwayId ? resolveLineName(operator, railwayId, masterNames, text) : `${operator.name}全線`,
-      area: railwayId ? areaOf(operator, railwaySuffix(railwayId)) : AREA_METRO,
+      area,
+      rank: railwayId ? rankOf(operator, railwaySuffix(railwayId), area) : AREA_RANK[AREA_METRO] + 2,
       trouble: assessTrouble(status, text),
       text,
       cause: info["odpt:trainInformationCause"]?.ja,
@@ -304,13 +361,20 @@ async function fetchOperator(
   });
 
   const bodyOf = (a: { text: string; cause?: string }) => (a.cause ? `${a.text}(原因: ${a.cause})` : a.text);
+  // バッジの文言は色の意味(赤=運休・見合わせ / オレンジ=遅れ・乱れ)と食い違わないようにする。
+  // 状態欄が「遅延」でも文面に運休が含まれて赤になる場合は、赤の意味の文言にする
+  const badgeOf = (a: Assessed) => {
+    const label = a.trouble.label;
+    if (a.trouble.severity === "critical") return label && SEVERE.test(label) ? label : "運休・見合わせ";
+    return label ?? "遅れ・乱れ";
+  };
 
   // 路線ごとの状態(お気に入り路線の表示・選択用)。路線マスタがある事業者はマスタの全路線を対象にし、
   // 路線別の情報がない路線(西武など)は事業者全体の情報で代用する
   const operatorWide = assessed.find((a) => !a.railwayId);
   const toLine = (id: string, title: string, area: string, a: Assessed | undefined): LineStatus => {
     const state: LineState = !a ? "unknown" : !a.trouble.actual ? "normal" : a.trouble.severity === "critical" ? "critical" : "warning";
-    const line: LineStatus = { id, title, operator: operator.name, area, state };
+    const line: LineStatus = { id, title, operator: operator.name, area, rank: rankOf(operator, railwaySuffix(id), area), state };
     if (a?.trouble.actual) {
       line.label = a.trouble.label;
       line.body = bodyOf(a);
@@ -356,7 +420,9 @@ async function fetchOperator(
         ...base,
         id: `train:${operator.id}:${first.area}:${first.trouble.label ?? ""}:${first.text}`,
         area: first.area,
-        title: `${operator.name} ${group.length}路線${first.trouble.label ? `: ${first.trouble.label}` : ""}`,
+        title: `${operator.name} ${group.length}路線`,
+        badge: badgeOf(first),
+        rank: Math.min(...group.map((e) => e.rank)),
         body: `${bodyOf(first)}(対象: ${group
           .map((e) => (e.lineTitle.startsWith(operator.linePrefix) ? e.lineTitle.slice(operator.linePrefix.length) : e.lineTitle))
           .join("、")})`,
@@ -370,7 +436,9 @@ async function fetchOperator(
         ...base,
         id: `train:${e.railwayId ?? operator.id}`,
         area: e.area,
-        title: e.trouble.label ? `${e.lineTitle}: ${e.trouble.label}` : e.lineTitle,
+        title: e.lineTitle,
+        badge: badgeOf(e),
+        rank: e.rank,
         body: bodyOf(e),
         timestamp: e.date,
         severity: e.trouble.severity,
@@ -426,11 +494,15 @@ export async function fetchTrain(): Promise<GenreResult> {
   warnings.push(...failures);
 
   const operatorIndex = (item: NormalizedItem) => OPERATORS.findIndex((o) => o.name === item.category);
+  // 首都圏の中心に近い路線ほど上。同じ重みなら、運休・見合わせ → 遅れ・乱れ の順
   items.sort(
     (a, b) =>
+      (a.rank ?? 99) - (b.rank ?? 99) ||
       SEVERITY_ORDER[a.severity ?? "info"] - SEVERITY_ORDER[b.severity ?? "info"] ||
       operatorIndex(a) - operatorIndex(b),
   );
+  const lineOperatorIndex = (l: LineStatus) => OPERATORS.findIndex((o) => o.name === l.operator);
+  lines.sort((a, b) => lineOperatorIndex(a) - lineOperatorIndex(b) || a.rank - b.rank || a.title.localeCompare(b.title, "ja"));
 
   return { ok: true, items, lines, warnings };
 }

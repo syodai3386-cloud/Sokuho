@@ -21,6 +21,8 @@ export type GenreConfig = {
   defaultArea?: string;
   // 結果一覧の下に常に出す補足
   footnote?: string;
+  // 結果の色(バッジ)が何を意味するかの説明。色だけに頼らず、一覧の上に凡例として出す
+  legend?: { tone: "critical" | "warning" | "info"; text: string }[];
   // 結果が0件のときの文言
   emptyMessage?: string;
   needsRegistration?: {
@@ -145,32 +147,41 @@ export const GENRES: GenreConfig[] = [
     id: "weather",
     label: "天気",
     emoji: "☀️",
-    description: "気象庁の発表する都道府県別の天気予報",
+    description: "3日分の天気・気温・降水確率・降水量",
     inputLabel: "都道府県を選択",
     options: WEATHER_AREAS,
     defaultValue: "140000", // 神奈川県
   },
   {
     id: "quake",
-    label: "地震・災害",
+    label: "地震",
     emoji: "🌏",
-    description: "P2P地震情報による地震観測情報",
+    description: "震度・震源などの地震情報",
     inputLabel: "地方を選択",
     options: QUAKE_REGIONS.map(({ value, label }) => ({ value, label })),
+    legend: [
+      { tone: "critical", text: "震度5強以上" },
+      { tone: "warning", text: "震度3〜5弱" },
+      { tone: "info", text: "震度2以下" },
+    ],
   },
   {
     id: "train",
     label: "電車遅延",
     emoji: "🚃",
-    description: "遅れ・運休が出ている路線",
+    description: "遅れ・運休が出ている路線を、首都圏の中心に近い順に表示します",
     inputLabel: "",
     options: [{ value: "all", label: "全路線" }],
     autoLoad: true,
     areas: ["首都圏", "北関東・甲信越", "東北", "その他"],
     defaultArea: "首都圏",
     emptyMessage: "現在、遅れや運休が出ている路線はありません。",
+    legend: [
+      { tone: "critical", text: "運転見合わせ・運休" },
+      { tone: "warning", text: "遅れ・ダイヤ乱れ" },
+    ],
     footnote:
-      "現時点で実際に遅れ・運休などが出ている路線だけを表示しています(台風接近時の「お知らせ」や「運休する場合があります」といった事前の注意喚起は表示しません)。ここに表示されていない路線は、現在遅れ・運休が出ていません。対象はJR東日本・東京メトロ・都営地下鉄・東急・京王・西武・東武です。小田急線・京成線は、データ提供元(ODPT)に運行情報がないため対象外です。初期表示は首都圏(東京都・神奈川県・埼玉県・千葉県の1都3県)に絞っています。茨城・栃木・群馬・山梨などにまたがる路線は、主な区間が1都3県内にあるかで分けています。",
+      "現時点で実際に遅れ・運休などが出ている路線だけを表示しています(台風接近時の「お知らせ」や「運休する場合があります」といった事前の注意喚起は表示しません)。表示されていない路線は、現在遅れ・運休が出ていません。上に表示されるほど首都圏の中心に近い路線です。対象はJR東日本・東京メトロ・都営地下鉄・東急・京王・西武・東武です。小田急線・京成線は、データ提供元(ODPT)に運行情報がないため対象外です。初期表示は首都圏(東京都・神奈川県・埼玉県・千葉県の1都3県)に絞っています。茨城・栃木・群馬・山梨などにまたがる路線は、主な区間が1都3県内にあるかで分けています。",
   },
   {
     id: "traffic",

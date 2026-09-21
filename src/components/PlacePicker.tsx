@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import type { FavoritePlace } from "@/lib/favorites";
 import { WEATHER_AREAS } from "@/lib/genres";
+import { cx } from "./ui";
+import ui from "./ui.module.css";
 import styles from "./PlacePicker.module.css";
 
 type PlaceOption = { code: string; name: string };
@@ -60,7 +62,7 @@ export function PlacePicker({
   return (
     <div className={styles.picker}>
       <select
-        className={styles.select}
+        className={cx(ui.select, styles.field)}
         aria-label="都道府県"
         value={area}
         onChange={(e) => {
@@ -75,7 +77,7 @@ export function PlacePicker({
         ))}
       </select>
       <select
-        className={styles.select}
+        className={cx(ui.select, styles.field)}
         aria-label="市区町村"
         value={city}
         onChange={(e) => setCity(e.target.value)}
@@ -90,7 +92,7 @@ export function PlacePicker({
           </option>
         ))}
       </select>
-      <button type="button" className={styles.button} onClick={handleAdd}>
+      <button type="button" className={cx(ui.btn, ui.btnPrimary)} onClick={handleAdd}>
         {addLabel}
       </button>
     </div>

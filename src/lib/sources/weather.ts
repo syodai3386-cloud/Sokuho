@@ -71,9 +71,15 @@ function weatherIcon(code: string, text: string): string {
   return "❔";
 }
 
-// 気象庁の文面は単語の区切りに全角スペースが入っているので詰める
+// 気象庁の文面は句の区切りに全角スペースが入っている(例: 「雨　夜遅く　くもり　所により　…」)。
+// 空白を単純に詰めると「雨夜遅くくもり」のように読みにくいので、意味の切れ目に読点を補ってから詰める
 function cleanText(text: string | undefined): string {
-  return (text ?? "情報なし").replace(/　/g, "");
+  return (text ?? "情報なし")
+    .replace(/　後　/g, "のち")
+    .replace(/　(時々|一時)　/g, "$1")
+    .replace(/所により　/g, "所により")
+    .replace(/　(?=所により|夜|朝|昼|夕方|未明|明け方|日中|午前|午後)/g, "、")
+    .replace(/　/g, "");
 }
 
 function dateOf(iso: string): string {
@@ -103,34 +109,56 @@ function dayLabel(diff: number, date: string): string {
   return `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`;
 }
 
-async function fetchRainByDate(areaCode: string): Promise<Record<string, number>> {
+type HourlyRain = { times: string[]; values: (number | null)[] };
+
+function jstToday() {
+  const now = new Date(Date.now() + 9 * 3_600_000);
+  return { today: now.toISOString().slice(0, 10), hour: now.getUTCHours() };
+}
+
+// 時間ごとの降水量の予測を、降水確率と同じ 0-6 / 6-12 / 12-18 / 18-24 時の区切りで合計する(mm)。
+// 今日のすでに終わった時間帯は null
+function sumRainSlots(hourly: HourlyRain, today: string, nowHour: number): Record<string, (number | null)[]> {
+  const byDate: Record<string, (number | null)[]> = {};
+  hourly.times.forEach((t, i) => {
+    const v = hourly.values[i];
+    if (typeof v !== "number") return;
+    const date = t.slice(0, 10);
+    const slot = Math.floor(Number(t.slice(11, 13)) / POP_SLOT_HOURS);
+    if (date === today && nowHour >= (slot + 1) * POP_SLOT_HOURS) return;
+    const slots = (byDate[date] ??= [null, null, null, null]);
+    slots[slot] = (slots[slot] ?? 0) + v;
+  });
+  for (const slots of Object.values(byDate)) {
+    slots.forEach((v, s) => {
+      if (v != null) slots[s] = Math.round(v * 10) / 10;
+    });
+  }
+  return byDate;
+}
+
+// 予報区(都道府県相当)の代表地点について、6時間ごとの降水量(mm)を日付ごとに返す
+async function fetchRainByDate(areaCode: string): Promise<Record<string, (number | null)[]>> {
   const coords = AREA_COORDS[areaCode];
   if (!coords) return {};
   try {
-    return await withCache(`weather:rain:${areaCode}`, RAIN_TTL_MS, async () => {
+    const hourly = await withCache(`weather:rain:${areaCode}`, RAIN_TTL_MS, async () => {
       const res = await fetch(
-        `https://api.open-meteo.com/v1/forecast?latitude=${coords[0]}&longitude=${coords[1]}&daily=precipitation_sum&timezone=Asia%2FTokyo&forecast_days=4`,
+        `https://api.open-meteo.com/v1/forecast?latitude=${coords[0]}&longitude=${coords[1]}&hourly=precipitation&timezone=Asia%2FTokyo&forecast_days=4`,
         { next: { revalidate: 1800 } },
       );
       if (!res.ok) throw new Error(`Open-Meteo returned ${res.status}`);
-      const json = (await res.json()) as {
-        daily?: { time?: string[]; precipitation_sum?: (number | null)[] };
-      };
-      const times = json.daily?.time ?? [];
-      const sums = json.daily?.precipitation_sum ?? [];
-      const byDate: Record<string, number> = {};
-      times.forEach((t, i) => {
-        const v = sums[i];
-        if (typeof v === "number") byDate[t] = v;
-      });
-      return byDate;
+      const json = (await res.json()) as { hourly?: { time?: string[]; precipitation?: (number | null)[] } };
+      const value: HourlyRain = { times: json.hourly?.time ?? [], values: json.hourly?.precipitation ?? [] };
+      return value;
     });
+    const { today, hour } = jstToday();
+    return sumRainSlots(hourly, today, hour);
   } catch {
     // 降水量は補助情報。取れなくても天気自体は表示する
     return {};
   }
 }
-
 const WMO_WEATHER: Record<number, { icon: string; text: string }> = {
   0: { icon: "☀️", text: "晴れ" },
   1: { icon: "🌤️", text: "晴れ時々くもり" },
@@ -168,11 +196,11 @@ type OpenMeteoForecast = {
     weather_code?: (number | null)[];
     temperature_2m_max?: (number | null)[];
     temperature_2m_min?: (number | null)[];
-    precipitation_sum?: (number | null)[];
   };
   hourly?: {
     time?: string[];
     precipitation_probability?: (number | null)[];
+    precipitation?: (number | null)[];
   };
 };
 
@@ -189,11 +217,11 @@ async function fetchCityWeather(areaCode: string, placeCode: string): Promise<Ge
     }
     const { lat, lon } = await geocode(prefecture, place.name);
 
-    const data = await withCache(`weather:city:${lat.toFixed(3)},${lon.toFixed(3)}`, CITY_TTL_MS, async () => {
+    const data = await withCache(`weather:city:v2:${lat.toFixed(3)},${lon.toFixed(3)}`, CITY_TTL_MS, async () => {
       const res = await fetch(
         `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
-          `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum` +
-          `&hourly=precipitation_probability&timezone=Asia%2FTokyo&forecast_days=3`,
+          `&daily=weather_code,temperature_2m_max,temperature_2m_min` +
+          `&hourly=precipitation_probability,precipitation&timezone=Asia%2FTokyo&forecast_days=3`,
         { next: { revalidate: 1800 } },
       );
       if (!res.ok) throw new Error(`Open-Meteo returned ${res.status}`);
@@ -208,6 +236,12 @@ async function fetchCityWeather(areaCode: string, placeCode: string): Promise<Ge
     const now = new Date(Date.now() + 9 * 3_600_000);
     const today = now.toISOString().slice(0, 10);
     const nowHour = now.getUTCHours();
+
+    const rainByDate = sumRainSlots(
+      { times: data.hourly?.time ?? [], values: data.hourly?.precipitation ?? [] },
+      today,
+      nowHour,
+    );
 
     const days: WeatherDay[] = times.map((date, i) => {
       const code = data.daily?.weather_code?.[i];
@@ -226,7 +260,6 @@ async function fetchCityWeather(areaCode: string, placeCode: string): Promise<Ge
 
       const max = data.daily?.temperature_2m_max?.[i];
       const min = data.daily?.temperature_2m_min?.[i];
-      const rain = data.daily?.precipitation_sum?.[i];
       const diff = Math.round((Date.parse(date) - Date.parse(today)) / 86_400_000);
 
       return {
@@ -238,7 +271,7 @@ async function fetchCityWeather(areaCode: string, placeCode: string): Promise<Ge
         tempMax: max != null ? Math.round(max) : undefined,
         tempMin: min != null ? Math.round(min) : undefined,
         popSlots,
-        rainMm: typeof rain === "number" ? rain : undefined,
+        rainSlots: rainByDate[date] ?? [null, null, null, null],
       };
     });
 
@@ -309,7 +342,7 @@ async function fetchJmaWeather(areaCode: string): Promise<GenreResult> {
       weeklyTempByDate[dateOf(t)] = { min: toNumber(a?.tempsMin?.[i]), max: toNumber(a?.tempsMax?.[i]) };
     });
 
-    const today = new Date(Date.now() + 9 * 3_600_000).toISOString().slice(0, 10);
+    const { today, hour: nowHour } = jstToday();
     const sameCount = tempSeries != null && tempSeries.areas.length === weatherSeries.areas.length;
 
     const items: NormalizedItem[] = weatherSeries.areas.map((area, areaIdx) => {
@@ -334,6 +367,13 @@ async function fetchJmaWeather(areaCode: string): Promise<GenreResult> {
           popSlots[slot] = toNumber(popArea?.pops?.[pi]) ?? null;
         });
 
+        // 発表が古くても、今日のすでに終わった時間帯は出さない(降水量の扱いと揃える)
+        if (date === today) {
+          popSlots.forEach((_, slot) => {
+            if (nowHour >= (slot + 1) * POP_SLOT_HOURS) popSlots[slot] = null;
+          });
+        }
+
         let tempMin: number | undefined;
         let tempMax: number | undefined;
         tempSeries?.timeDefines.forEach((tt, ti) => {
@@ -357,7 +397,7 @@ async function fetchJmaWeather(areaCode: string): Promise<GenreResult> {
           tempMin,
           popSlots,
           popDaily: popSlots.every((p) => p == null) ? weeklyPopByDate[date] : undefined,
-          rainMm: rainByDate[date],
+          rainSlots: rainByDate[date] ?? [null, null, null, null],
         });
       });
 

@@ -1,13 +1,13 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
-import styles from "@/app/[genre]/page.module.css";
 import { useFavorites } from "@/lib/favorites";
 import type { GenreConfig } from "@/lib/genres";
 import type { GenreResult, LineStatus, NormalizedItem } from "@/lib/types";
 import { FavoriteLines } from "./FavoriteLines";
 import { ResultList } from "./ResultList";
+import { Banner, Chip, FavoritesLink, FilterRow, Legend, PageShell, RefreshButton } from "./ui";
+import ui from "./ui.module.css";
 
 type FetchedState = {
   key: string;
@@ -94,42 +94,40 @@ export function GenreView({ genre }: { genre: GenreConfig }) {
       ? `${genre.emptyMessage}(他のエリアには${hiddenByArea}件あります)`
       : genre.emptyMessage;
 
-  const showFavoriteLines = genre.id === "train" && !loading && !fetched?.error && favorites.trainLines.length > 0 && fetched?.lines;
+  const showFavoriteLines =
+    genre.id === "train" && !loading && !fetched?.error && favorites.trainLines.length > 0 && fetched?.lines;
 
   return (
-    <main className={styles.main}>
-      <Link href="/" className={styles.back}>
-        ← ジャンル選択に戻る
-      </Link>
-      <div className={styles.header}>
-        <span className={styles.emoji}>{genre.emoji}</span>
-        <h1 className={styles.title}>{genre.label}</h1>
-        <button
-          type="button"
-          className={styles.reload}
-          onClick={() => setReloadCount((c) => c + 1)}
-          disabled={loading}
-        >
-          {loading ? "更新中..." : "更新"}
-        </button>
-      </div>
-
+    <PageShell
+      emoji={genre.emoji}
+      title={genre.label}
+      back={{ href: "/", label: "ホームに戻る" }}
+      subtitle={genre.description}
+      actions={
+        <>
+          <FavoritesLink />
+          <RefreshButton loading={loading} onClick={() => setReloadCount((c) => c + 1)} />
+        </>
+      }
+    >
       {genre.needsRegistration && (
-        <div className={styles.registrationNotice}>
+        <Banner>
           このジャンルの実データを表示するには{" "}
           <a href={genre.needsRegistration.url} target="_blank" rel="noreferrer">
             {genre.needsRegistration.serviceName}
           </a>{" "}
           の無料開発者登録が必要です。登録が済むまではサンプルデータを表示します。
-        </div>
+        </Banner>
       )}
 
       {!genre.autoLoad && (
-        <>
-          <label htmlFor="target-select">{genre.inputLabel}</label>
+        <div className={ui.section}>
+          <label className={ui.filterLabel} htmlFor="target-select">
+            {genre.inputLabel}
+          </label>
           <select
             id="target-select"
-            className={styles.select}
+            className={ui.select}
             value={target}
             onChange={(e) => setTargetOverride(e.target.value)}
           >
@@ -139,60 +137,42 @@ export function GenreView({ genre }: { genre: GenreConfig }) {
               </option>
             ))}
           </select>
-        </>
+        </div>
       )}
 
-      {showFavoriteLines && fetched?.lines && (
-        <FavoriteLines favorites={favorites.trainLines} lines={fetched.lines} />
-      )}
+      {showFavoriteLines && fetched?.lines && <FavoriteLines favorites={favorites.trainLines} lines={fetched.lines} />}
 
       {!loading && !fetched?.error && genre.autoLoad && (
-        <p className={styles.summary}>遅れ・運休が出ている路線: {visibleItems.length}件</p>
+        <p className={ui.summary}>{visibleItems.length}件の路線で遅れ・運休が出ています</p>
       )}
 
       {genre.areas && (
-        <div className={styles.chipRow}>
-          <span className={styles.chipLabel}>エリア</span>
-          <div className={styles.chips} role="group" aria-label="エリアで絞り込み">
-            {[ALL, ...genre.areas].map((a) => {
-              const count = a === ALL ? allItems.length : allItems.filter((i) => i.area === a).length;
-              return (
-                <button
-                  key={a}
-                  type="button"
-                  className={`${styles.chip} ${a === area ? styles.chipActive : ""}`}
-                  aria-pressed={a === area}
-                  onClick={() => setAreaOverride(a)}
-                >
-                  {a === ALL ? "すべて" : a} {loading ? "" : count}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        <FilterRow label="エリア">
+          {[ALL, ...genre.areas].map((a) => {
+            const count = a === ALL ? allItems.length : allItems.filter((i) => i.area === a).length;
+            return (
+              <Chip key={a} active={a === area} onClick={() => setAreaOverride(a)}>
+                {a === ALL ? "すべて" : a} {loading ? "" : count}
+              </Chip>
+            );
+          })}
+        </FilterRow>
       )}
 
       {categories.length > 1 && (
-        <div className={styles.chipRow}>
-          <span className={styles.chipLabel}>事業者</span>
-          <div className={styles.chips} role="group" aria-label="事業者で絞り込み">
-            {[ALL, ...categories].map((c) => {
-              const count = c === ALL ? areaItems.length : areaItems.filter((i) => i.category === c).length;
-              return (
-                <button
-                  key={c}
-                  type="button"
-                  className={`${styles.chip} ${c === activeFilter ? styles.chipActive : ""}`}
-                  aria-pressed={c === activeFilter}
-                  onClick={() => setFilter(c)}
-                >
-                  {c === ALL ? "すべて" : c} {count}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        <FilterRow label="事業者">
+          {[ALL, ...categories].map((c) => {
+            const count = c === ALL ? areaItems.length : areaItems.filter((i) => i.category === c).length;
+            return (
+              <Chip key={c} active={c === activeFilter} onClick={() => setFilter(c)}>
+                {c === ALL ? "すべて" : c} {count}
+              </Chip>
+            );
+          })}
+        </FilterRow>
       )}
+
+      {genre.legend && !loading && visibleItems.length > 0 && <Legend items={genre.legend} />}
 
       <ResultList
         items={visibleItems}
@@ -204,11 +184,7 @@ export function GenreView({ genre }: { genre: GenreConfig }) {
         emptyMessage={emptyMessage}
       />
 
-      {genre.footnote && <p className={styles.footnote}>{genre.footnote}</p>}
-
-      <p className={styles.favLink}>
-        <Link href="/favorites">★ お気に入りを設定する</Link>
-      </p>
-    </main>
+      {genre.footnote && <p className={ui.footnote}>{genre.footnote}</p>}
+    </PageShell>
   );
 }

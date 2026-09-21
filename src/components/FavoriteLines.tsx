@@ -1,7 +1,16 @@
 import Link from "next/link";
 import type { FavoriteLine } from "@/lib/favorites";
 import type { LineState, LineStatus } from "@/lib/types";
+import { Badge, type Tone, cx } from "./ui";
+import ui from "./ui.module.css";
 import styles from "./FavoriteLines.module.css";
+
+const STATE_TONE: Record<LineState, Tone> = {
+  normal: "ok",
+  warning: "warning",
+  critical: "critical",
+  unknown: "muted",
+};
 
 const STATE_TEXT: Record<LineState, string> = {
   normal: "平常運転",
@@ -10,20 +19,13 @@ const STATE_TEXT: Record<LineState, string> = {
   unknown: "情報なし",
 };
 
-const STATE_CLASS: Record<LineState, string> = {
-  normal: styles.normal,
-  warning: styles.warning,
-  critical: styles.critical,
-  unknown: styles.unknown,
-};
-
 export function FavoriteLines({ favorites, lines }: { favorites: FavoriteLine[]; lines: LineStatus[] }) {
   const byId = new Map(lines.map((l) => [l.id, l]));
 
   return (
-    <section className={styles.card}>
-      <div className={styles.head}>
-        <h2 className={styles.title}>お気に入り路線</h2>
+    <section className={cx(ui.card, ui.section)}>
+      <div className={ui.sectionHead}>
+        <h2 className={ui.sectionTitle}>お気に入り路線</h2>
         <Link href="/favorites" className={styles.edit}>
           編集
         </Link>
@@ -36,11 +38,11 @@ export function FavoriteLines({ favorites, lines }: { favorites: FavoriteLine[];
             <li key={fav.id} className={styles.row}>
               <div className={styles.rowHead}>
                 <span className={styles.name}>{line?.title ?? fav.title}</span>
-                <span className={`${styles.badge} ${STATE_CLASS[state]}`}>
+                <Badge tone={STATE_TONE[state]}>
                   {state === "normal" || state === "unknown" ? STATE_TEXT[state] : (line?.label ?? STATE_TEXT[state])}
-                </span>
+                </Badge>
               </div>
-              {line?.body && <p className={styles.body}>{line.body}</p>}
+              {line?.body && <p className={ui.itemBody}>{line.body}</p>}
             </li>
           );
         })}

@@ -1,14 +1,13 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import pageStyles from "@/app/[genre]/page.module.css";
 import { type FavoritePlace, placeKey, useFavorites } from "@/lib/favorites";
 import type { GenreConfig } from "@/lib/genres";
 import type { GenreResult } from "@/lib/types";
 import { PlacePicker } from "./PlacePicker";
 import { WeatherCard } from "./WeatherCard";
-import styles from "./WeatherView.module.css";
+import { FavoritesLink, PageShell, RefreshButton, StateBox, cx } from "./ui";
+import ui from "./ui.module.css";
 
 type Fetched = { reload: number; result: GenreResult | null; error?: string };
 
@@ -68,48 +67,40 @@ export function WeatherView({ genre }: { genre: GenreConfig }) {
   const reloading = !ready || places.some((p) => fetched[placeKey(p)]?.reload !== reloadCount);
 
   return (
-    <main className={pageStyles.main}>
-      <Link href="/" className={pageStyles.back}>
-        ← ジャンル選択に戻る
-      </Link>
-      <div className={pageStyles.header}>
-        <span className={pageStyles.emoji}>{genre.emoji}</span>
-        <h1 className={pageStyles.title}>{genre.label}</h1>
-        <button
-          type="button"
-          className={pageStyles.reload}
-          onClick={() => setReloadCount((c) => c + 1)}
-          disabled={reloading}
-        >
-          {reloading ? "更新中..." : "更新"}
-        </button>
-      </div>
-
-      <p className={styles.lead}>
-        {favorites.weatherPlaces.length > 0
-          ? "お気に入りの地点を表示しています。"
-          : "お気に入りが未設定のため、神奈川県を表示しています。"}
-        <Link href="/favorites" className={styles.link}>
-          お気に入りを設定
-        </Link>
-      </p>
-
+    <PageShell
+      emoji={genre.emoji}
+      title={genre.label}
+      back={{ href: "/", label: "ホームに戻る" }}
+      subtitle={
+        favorites.weatherPlaces.length > 0
+          ? `お気に入りの${favorites.weatherPlaces.length}地点を表示しています。`
+          : "お気に入りが未設定のため、神奈川県を表示しています。"
+      }
+      actions={
+        <>
+          <FavoritesLink />
+          <RefreshButton loading={reloading} onClick={() => setReloadCount((c) => c + 1)} />
+        </>
+      }
+    >
       {places.map((place) => {
         const key = placeKey(place);
         const entry = fetched[key];
         const loading = !ready || !entry || entry.reload !== reloadCount;
         const isFavorite = favoriteKeys.has(key);
         const isExtra = !baseKeys.has(key);
-        const error = entry?.error ?? (entry?.result && !entry.result.ok ? (entry.result.error ?? "取得に失敗しました") : undefined);
+        const error =
+          entry?.error ?? (entry?.result && !entry.result.ok ? (entry.result.error ?? "取得に失敗しました") : undefined);
+        const items = entry?.result?.items ?? [];
 
         return (
-          <section key={key} className={styles.place}>
-            <div className={styles.placeHead}>
-              <h2 className={styles.placeTitle}>{place.label}</h2>
-              <div className={styles.placeActions}>
+          <section key={key} className={ui.section}>
+            <div className={ui.sectionHead}>
+              <h2 className={ui.sectionTitle}>{place.label}</h2>
+              <div className={ui.chips}>
                 <button
                   type="button"
-                  className={`${styles.chipButton} ${isFavorite ? styles.chipButtonOn : ""}`}
+                  className={cx(ui.chip, isFavorite && ui.chipActive)}
                   aria-pressed={isFavorite}
                   onClick={() => toggleFavorite(place)}
                 >
@@ -118,22 +109,23 @@ export function WeatherView({ genre }: { genre: GenreConfig }) {
                 {isExtra && (
                   <button
                     type="button"
-                    className={styles.chipButton}
+                    className={ui.chip}
+                    aria-label={`${place.label}を閉じる`}
                     onClick={() => setExtras((prev) => prev.filter((e) => placeKey(e) !== key))}
                   >
-                    ×
+                    閉じる
                   </button>
                 )}
               </div>
             </div>
             {loading ? (
-              <div className={styles.state}>取得中...</div>
+              <StateBox>取得中...</StateBox>
             ) : error ? (
-              <div className={styles.state}>取得できませんでした: {error}</div>
+              <StateBox>取得できませんでした: {error}</StateBox>
             ) : (
-              <div className={styles.cards}>
-                {entry.result?.items.map((item) => (
-                  <WeatherCard key={item.id} item={item} />
+              <div className={ui.stack}>
+                {items.map((item) => (
+                  <WeatherCard key={item.id} item={item} showTitle={items.length > 1} />
                 ))}
               </div>
             )}
@@ -141,16 +133,17 @@ export function WeatherView({ genre }: { genre: GenreConfig }) {
         );
       })}
 
-      <section className={styles.adder}>
-        <h2 className={styles.adderTitle}>ほかの地点も表示する</h2>
+      <section className={cx(ui.card, ui.section)}>
+        <div className={ui.sectionHead}>
+          <h2 className={ui.sectionTitle}>ほかの地点も表示する</h2>
+        </div>
         <PlacePicker
           addLabel="表示に追加"
-          onAdd={(place) => setExtras((prev) => (prev.some((e) => placeKey(e) === placeKey(place)) ? prev : [...prev, place]))}
+          onAdd={(place) =>
+            setExtras((prev) => (prev.some((e) => placeKey(e) === placeKey(place)) ? prev : [...prev, place]))
+          }
         />
-        <p className={styles.hint}>
-          市区町村を選ぶと、その地点の予報を表示します(Open-Meteoのモデル予測)。気象庁の予報区は東部・西部のように広い区域単位です。
-        </p>
       </section>
-    </main>
+    </PageShell>
   );
 }

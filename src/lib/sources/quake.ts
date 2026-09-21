@@ -89,7 +89,8 @@ export async function fetchQuake(regionValue: string): Promise<GenreResult> {
       return {
         id: `quake:${item.id}`,
         genre: "quake",
-        title: `最大震度${scaleLabel} ${eq.hypocenter?.name ?? "震源不明"}`,
+        title: eq.hypocenter?.name ?? "震源不明",
+        badge: `震度${scaleLabel}`,
         body: bodyParts.join(" / ") || "詳細情報なし",
         timestamp: toIsoTimestamp(eq.time),
         severity: severityFromScale(scale),

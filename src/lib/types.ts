@@ -14,8 +14,8 @@ export type WeatherDay = {
   popSlots: (number | null)[];
   // 6時間ごとの値がない日の、1日単位の降水確率(%)
   popDaily?: number;
-  // 1日の降水量の予測(mm)。取得できなければ undefined
-  rainMm?: number;
+  // 0-6 / 6-12 / 12-18 / 18-24 時の降水量の予測(mm)。取得できない時間帯は null
+  rainSlots: (number | null)[];
 };
 
 export type WeatherForecast = {
@@ -36,6 +36,10 @@ export type NormalizedItem = {
   category?: string;
   // 絞り込み用の地域(電車なら 首都圏 / 北関東・甲信越 / 東北)
   area?: string;
+  // 一覧の各項目の右上に出す状態の表示(電車なら「運転見合わせ」、地震なら「震度3」)。色は severity に従う
+  badge?: string;
+  // 並び順の重み(小さいほど上)。電車では首都圏の中心に近い路線ほど小さい
+  rank?: number;
   weather?: WeatherForecast;
   sourceName: string;
   sourceUrl: string;
@@ -49,6 +53,7 @@ export type LineStatus = {
   title: string;
   operator: string;
   area: string;
+  rank: number;
   state: LineState;
   label?: string;
   body?: string;
