@@ -17,5 +17,7 @@ export type GenreResult = {
   ok: boolean;
   items: NormalizedItem[];
   isMock?: boolean;
+  // isMock のとき、なぜサンプル表示なのかを利用者に伝える文言
+  notice?: string;
   error?: string;
 };

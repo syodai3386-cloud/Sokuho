@@ -115,7 +115,8 @@ export const QUAKE_REGIONS: { value: string; label: string; keywords: string[] }
   },
 ];
 
-// ODPT登録後に実データへ切り替える想定の主要路線(MVPはモック表示)
+// 主要路線。ODPTから実データを取得できる路線は sources/train.ts の ODPT_RAILWAYS が
+// 決める(それ以外はサンプル表示)。
 export const TRAIN_LINES: GenreOption[] = [
   { value: "yamanote", label: "JR山手線" },
   { value: "chuo", label: "JR中央線快速" },
@@ -177,10 +178,6 @@ export const GENRES: GenreConfig[] = [
     description: "主要路線の運行情報",
     inputLabel: "路線を選択",
     options: TRAIN_LINES,
-    needsRegistration: {
-      serviceName: "ODPT(公共交通オープンデータセンター)",
-      url: "https://developer-dc.odpt.org/",
-    },
   },
   {
     id: "traffic",

@@ -7,39 +7,52 @@ import type { GenreConfig } from "@/lib/genres";
 import type { GenreResult, NormalizedItem } from "@/lib/types";
 import { ResultList } from "./ResultList";
 
+type FetchedState = {
+  key: string;
+  items: NormalizedItem[];
+  isMock: boolean;
+  notice: string | undefined;
+  error: string | undefined;
+};
+
 export function GenreView({ genre }: { genre: GenreConfig }) {
   const [target, setTarget] = useState(genre.options[0]?.value ?? "");
-  const [loading, setLoading] = useState(true);
-  const [items, setItems] = useState<NormalizedItem[]>([]);
-  const [error, setError] = useState<string | undefined>(undefined);
-  const [isMock, setIsMock] = useState(false);
+  const [fetched, setFetched] = useState<FetchedState | null>(null);
+
+  const requestKey = `${genre.id}:${target}`;
+  const loading = fetched?.key !== requestKey;
 
   useEffect(() => {
     if (!target) return;
     let cancelled = false;
-    setLoading(true);
-    setError(undefined);
 
     fetch(`/api/${genre.id}?target=${encodeURIComponent(target)}`)
       .then((res) => res.json() as Promise<GenreResult>)
       .then((data) => {
         if (cancelled) return;
-        setItems(data.items);
-        setIsMock(Boolean(data.isMock));
-        if (!data.ok) setError(data.error ?? "取得に失敗しました");
+        setFetched({
+          key: requestKey,
+          items: data.items,
+          isMock: Boolean(data.isMock),
+          notice: data.notice,
+          error: data.ok ? undefined : (data.error ?? "取得に失敗しました"),
+        });
       })
       .catch((err) => {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : "取得に失敗しました");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
+        setFetched({
+          key: requestKey,
+          items: [],
+          isMock: false,
+          notice: undefined,
+          error: err instanceof Error ? err.message : "取得に失敗しました",
+        });
       });
 
     return () => {
       cancelled = true;
     };
-  }, [genre.id, target]);
+  }, [genre.id, target, requestKey]);
 
   return (
     <main className={styles.main}>
@@ -75,7 +88,13 @@ export function GenreView({ genre }: { genre: GenreConfig }) {
         ))}
       </select>
 
-      <ResultList items={items} loading={loading} error={error} isMock={isMock} />
+      <ResultList
+        items={fetched?.items ?? []}
+        loading={loading}
+        error={fetched?.error}
+        isMock={fetched?.isMock}
+        notice={fetched?.notice}
+      />
     </main>
   );
 }

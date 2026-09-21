@@ -25,11 +25,13 @@ export function ResultList({
   loading,
   error,
   isMock,
+  notice,
 }: {
   items: NormalizedItem[];
   loading: boolean;
   error?: string;
   isMock?: boolean;
+  notice?: string;
 }) {
   if (loading) {
     return <div className={styles.state}>取得中...</div>;
@@ -43,7 +45,8 @@ export function ResultList({
     <>
       {isMock && (
         <div className={styles.mockBanner}>
-          これはサンプルデータです。実データを表示するには開発者登録が必要です（詳細はREADME参照）。
+          これはサンプルデータです。
+          {notice ?? "実データを表示するには開発者登録が必要です（詳細はREADME参照）。"}
         </div>
       )}
       {items.length === 0 ? (
