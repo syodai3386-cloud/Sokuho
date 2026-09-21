@@ -67,32 +67,51 @@ const JR_EAST_NAMES: Record<string, string> = {
   YamagataShinkansen: "山形新幹線", AkitaShinkansen: "秋田新幹線",
 };
 
-// エリア名は genres.ts の train.areas と一致させる。JR東日本以外(地下鉄・私鉄)はすべて首都圏
+// エリア名は genres.ts の train.areas と一致させる。
+// 「首都圏」は一般的な狭義の意味の1都3県(東京都・神奈川県・埼玉県・千葉県)。法律上の首都圏(1都7県)は
+// 茨城・栃木・群馬・山梨を含むが、ここでは含めない。路線は「主な区間が1都3県内にあるか」で分類する。
+// 地下鉄・東急・京王・西武は全路線が1都3県内。JR東日本と東武は下の表で分ける。
 const AREA_METRO = "首都圏";
 const AREA_KITAKANTO_KOSHINETSU = "北関東・甲信越";
 const AREA_TOHOKU = "東北";
+const AREA_OTHER = "その他";
 
 const JR_EAST_METRO_LINES = new Set([
-  "Yamanote", "Chuo", "ChuoRapid", "ChuoSobuLocal", "Tokaido", "Yokosuka", "ShonanShinjuku", "Utsunomiya",
+  "Yamanote", "ChuoRapid", "ChuoSobuLocal", "Tokaido", "Yokosuka", "ShonanShinjuku", "Utsunomiya",
   "Takasaki", "Joban", "JobanRapid", "JobanLocal", "Sobu", "SobuRapid", "Keiyo", "Musashino", "Nambu",
   "NambuBranch", "Yokohama", "Tsurumi", "TsurumiUmiShibauraBranch", "TsurumiOkawaBranch", "Sagami", "Ome",
   "Itsukaichi", "Hachiko", "Kawagoe", "SaikyoKawagoe", "KeihinTohokuNegishi", "SotetsuDirect", "Sotobo",
-  "Uchibo", "Narita", "NaritaAbikoBranch", "NaritaAirportBranch", "Kashima", "Togane", "Kururi", "Ito",
+  "Uchibo", "Narita", "NaritaAbikoBranch", "NaritaAirportBranch", "Togane", "Kururi",
 ]);
 
 const JR_EAST_KITAKANTO_KOSHINETSU_LINES = new Set([
-  "Mito", "Suigun", "SuigunBranch", "Ryomo", "Agatsuma", "Joetsu", "Nikko", "Karasuyama", "Koumi", "Shinonoi",
-  "Iiyama", "Oito", "Shinetsu", "Echigo", "Hakushin", "Yahiko", "JoetsuShinkansen", "HokurikuShinkansen",
-  "ChuoTatsunoBranch",
+  "Kashima", "Chuo", "Mito", "Suigun", "SuigunBranch", "Ryomo", "Agatsuma", "Joetsu", "Nikko", "Karasuyama",
+  "Koumi", "Shinonoi", "Iiyama", "Oito", "Shinetsu", "Echigo", "Hakushin", "Yahiko", "JoetsuShinkansen",
+  "HokurikuShinkansen", "ChuoTatsunoBranch",
 ]);
 
-// JR東日本の路線IDの末尾からエリアを決める。表にない新しい路線は東北扱い(初期表示の首都圏を汚さないため)
-function jrEastArea(railwaySuffixId: string): string {
-  if (JR_EAST_METRO_LINES.has(railwaySuffixId)) return AREA_METRO;
-  if (JR_EAST_KITAKANTO_KOSHINETSU_LINES.has(railwaySuffixId)) return AREA_KITAKANTO_KOSHINETSU;
-  return AREA_TOHOKU;
-}
+// 静岡県内(伊東線)
+const JR_EAST_OTHER_LINES = new Set(["Ito"]);
 
+// 東武のうち、主な区間が栃木・群馬にある路線
+const TOBU_OUTSIDE_METRO_LINES = new Set([
+  "Kinugawa", "Isesaki", "Kiryu", "Koizumi", "KoizumiBranch", "Nikko", "Sano", "Utsunomiya",
+]);
+
+// 路線IDの末尾(odpt.Railway:JR-East.Yamanote の Yamanote)からエリアを決める。
+// JR東日本の表にない新しい路線は東北扱い(初期表示の首都圏を汚さないため)
+function areaOf(operator: Operator, suffix: string): string {
+  if (operator.useBuiltInNames) {
+    if (JR_EAST_METRO_LINES.has(suffix)) return AREA_METRO;
+    if (JR_EAST_KITAKANTO_KOSHINETSU_LINES.has(suffix)) return AREA_KITAKANTO_KOSHINETSU;
+    if (JR_EAST_OTHER_LINES.has(suffix)) return AREA_OTHER;
+    return AREA_TOHOKU;
+  }
+  if (operator.id === "odpt.Operator:Tobu" && TOBU_OUTSIDE_METRO_LINES.has(suffix)) {
+    return AREA_KITAKANTO_KOSHINETSU;
+  }
+  return AREA_METRO;
+}
 const KEY_ENV: Record<Tier, string> = {
   standard: "ODPT_CONSUMER_KEY",
   challenge: "ODPT_CHALLENGE_KEY",
@@ -211,7 +230,7 @@ async function fetchOperator(operator: Operator, key: string | undefined, url: s
     entries.push({
       railwayId,
       lineTitle: railwayId ? resolveLineName(operator, railwayId, masterNames, text) : `${operator.name}全線`,
-      area: operator.useBuiltInNames && railwayId ? jrEastArea(railwaySuffix(railwayId)) : AREA_METRO,
+      area: railwayId ? areaOf(operator, railwaySuffix(railwayId)) : AREA_METRO,
       status,
       text,
       cause: info["odpt:trainInformationCause"]?.ja,
