@@ -1,0 +1,93 @@
+.card {
+  margin-bottom: 20px;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid var(--card-border);
+  background: var(--card-bg);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.title {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.edit {
+  font-size: 12px;
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.row {
+  padding-top: 10px;
+  border-top: 1px solid var(--card-border);
+}
+
+.row:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+.rowHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.badge {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.normal {
+  color: #15803d;
+  border-color: #15803d;
+  background: color-mix(in srgb, #15803d 12%, transparent);
+}
+
+.warning {
+  color: var(--severity-warning);
+  border-color: var(--severity-warning);
+  background: color-mix(in srgb, var(--severity-warning) 14%, transparent);
+}
+
+.critical {
+  color: var(--severity-critical);
+  border-color: var(--severity-critical);
+  background: color-mix(in srgb, var(--severity-critical) 14%, transparent);
+}
+
+.unknown {
+  color: var(--muted);
+  border-color: var(--card-border);
+}
+
+.body {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
+}

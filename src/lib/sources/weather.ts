@@ -1,5 +1,6 @@
 import { withCache } from "../cache";
 import type { GenreResult, NormalizedItem, WeatherDay } from "../types";
+import { findPlace, geocode, prefectureName } from "./areas";
 
 type JmaTimeSeriesArea = {
   area: { name: string; code: string };
@@ -130,7 +131,145 @@ async function fetchRainByDate(areaCode: string): Promise<Record<string, number>
   }
 }
 
-export async function fetchWeather(areaCode: string): Promise<GenreResult> {
+const WMO_WEATHER: Record<number, { icon: string; text: string }> = {
+  0: { icon: "☀️", text: "晴れ" },
+  1: { icon: "🌤️", text: "晴れ時々くもり" },
+  2: { icon: "⛅", text: "くもり時々晴れ" },
+  3: { icon: "☁️", text: "くもり" },
+  45: { icon: "🌫️", text: "霧" },
+  48: { icon: "🌫️", text: "霧" },
+  51: { icon: "🌦️", text: "弱い霧雨" },
+  53: { icon: "🌦️", text: "霧雨" },
+  55: { icon: "🌧️", text: "強い霧雨" },
+  56: { icon: "🌧️", text: "着氷性の霧雨" },
+  57: { icon: "🌧️", text: "着氷性の霧雨" },
+  61: { icon: "🌦️", text: "弱い雨" },
+  63: { icon: "🌧️", text: "雨" },
+  65: { icon: "🌧️", text: "強い雨" },
+  66: { icon: "🌧️", text: "着氷性の雨" },
+  67: { icon: "🌧️", text: "着氷性の強い雨" },
+  71: { icon: "🌨️", text: "弱い雪" },
+  73: { icon: "❄️", text: "雪" },
+  75: { icon: "❄️", text: "強い雪" },
+  77: { icon: "❄️", text: "霧雪" },
+  80: { icon: "🌦️", text: "にわか雨" },
+  81: { icon: "🌧️", text: "強いにわか雨" },
+  82: { icon: "🌧️", text: "激しいにわか雨" },
+  85: { icon: "🌨️", text: "にわか雪" },
+  86: { icon: "❄️", text: "強いにわか雪" },
+  95: { icon: "⛈️", text: "雷雨" },
+  96: { icon: "⛈️", text: "ひょうを伴う雷雨" },
+  99: { icon: "⛈️", text: "ひょうを伴う激しい雷雨" },
+};
+
+type OpenMeteoForecast = {
+  daily?: {
+    time?: string[];
+    weather_code?: (number | null)[];
+    temperature_2m_max?: (number | null)[];
+    temperature_2m_min?: (number | null)[];
+    precipitation_sum?: (number | null)[];
+  };
+  hourly?: {
+    time?: string[];
+    precipitation_probability?: (number | null)[];
+  };
+};
+
+const CITY_TTL_MS = 30 * 60_000;
+
+// 市区町村など特定の地点の予報。気象庁の予報は東部・西部などの予報区単位でしか出ないため、
+// 代表地点の座標でOpen-Meteoのモデル予測を取得する(気象庁の発表そのものではない)
+async function fetchCityWeather(areaCode: string, placeCode: string): Promise<GenreResult> {
+  try {
+    const prefecture = prefectureName(areaCode);
+    const place = await findPlace(areaCode, placeCode);
+    if (!prefecture || !place) {
+      return { ok: false, items: [], error: "指定された地点が見つかりません" };
+    }
+    const { lat, lon } = await geocode(prefecture, place.name);
+
+    const data = await withCache(`weather:city:${lat.toFixed(3)},${lon.toFixed(3)}`, CITY_TTL_MS, async () => {
+      const res = await fetch(
+        `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+          `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum` +
+          `&hourly=precipitation_probability&timezone=Asia%2FTokyo&forecast_days=3`,
+        { next: { revalidate: 1800 } },
+      );
+      if (!res.ok) throw new Error(`Open-Meteo returned ${res.status}`);
+      return (await res.json()) as OpenMeteoForecast;
+    });
+
+    const times = data.daily?.time ?? [];
+    if (times.length === 0) {
+      return { ok: false, items: [], error: "予報データの形式が想定と異なります" };
+    }
+
+    const now = new Date(Date.now() + 9 * 3_600_000);
+    const today = now.toISOString().slice(0, 10);
+    const nowHour = now.getUTCHours();
+
+    const days: WeatherDay[] = times.map((date, i) => {
+      const code = data.daily?.weather_code?.[i];
+      const wmo = code != null ? WMO_WEATHER[code] : undefined;
+
+      // 6時間ごとの降水確率(時間ごとの値の最大)。今日のすでに終わった時間帯は出さない
+      const popSlots: (number | null)[] = [null, null, null, null];
+      (data.hourly?.time ?? []).forEach((t, hi) => {
+        if (t.slice(0, 10) !== date) return;
+        const hour = Number(t.slice(11, 13));
+        const slot = Math.floor(hour / 6);
+        if (date === today && nowHour >= slot * 6 + 6) return;
+        const v = data.hourly?.precipitation_probability?.[hi];
+        if (typeof v === "number") popSlots[slot] = Math.max(popSlots[slot] ?? 0, v);
+      });
+
+      const max = data.daily?.temperature_2m_max?.[i];
+      const min = data.daily?.temperature_2m_min?.[i];
+      const rain = data.daily?.precipitation_sum?.[i];
+      const diff = Math.round((Date.parse(date) - Date.parse(today)) / 86_400_000);
+
+      return {
+        date,
+        label: dayLabel(diff, date),
+        code: code != null ? String(code) : "",
+        icon: wmo?.icon ?? "❔",
+        text: wmo?.text ?? "不明",
+        tempMax: max != null ? Math.round(max) : undefined,
+        tempMin: min != null ? Math.round(min) : undefined,
+        popSlots,
+        rainMm: typeof rain === "number" ? rain : undefined,
+      };
+    });
+
+    const item: NormalizedItem = {
+      id: `weather:${areaCode}:${placeCode}`,
+      genre: "weather",
+      title: place.name,
+      body: days.map((d) => `${d.label}: ${d.text}`).join(" / "),
+      timestamp: new Date().toISOString(),
+      weather: { source: "open-meteo", days },
+      sourceName: "Open-Meteo(モデル予測)",
+      sourceUrl: "https://open-meteo.com/",
+    };
+    return { ok: true, items: [item] };
+  } catch (err) {
+    return {
+      ok: false,
+      items: [],
+      error: err instanceof Error ? err.message : "天気情報の取得に失敗しました",
+    };
+  }
+}
+
+// target は 予報区コード、または「予報区コード:市区町村コード」
+export async function fetchWeather(target: string): Promise<GenreResult> {
+  const [areaCode, placeCode] = target.split(":");
+  if (placeCode) return fetchCityWeather(areaCode, placeCode);
+  return fetchJmaWeather(areaCode);
+}
+
+async function fetchJmaWeather(areaCode: string): Promise<GenreResult> {
   try {
     const [data, rainByDate] = await Promise.all([
       withCache(`weather:${areaCode}`, TTL_MS, async () => {
@@ -228,7 +367,7 @@ export async function fetchWeather(areaCode: string): Promise<GenreResult> {
         title: area.area.name,
         body: days.map((d) => `${d.label}: ${d.text}`).join(" / "),
         timestamp: shortTerm.reportDatetime,
-        weather: { tempPointName, days },
+        weather: { source: "jma", tempPointName, days },
         sourceName: `気象庁(${shortTerm.publishingOffice}) / 降水量: Open-Meteo`,
         sourceUrl: "https://www.jma.go.jp/bosai/forecast/",
       };

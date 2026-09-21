@@ -5,7 +5,7 @@ export type Severity = "info" | "warning" | "critical";
 export type WeatherDay = {
   date: string; // YYYY-MM-DD
   label: string; // 今日 / 明日 / 明後日
-  code: string; // 気象庁の天気コード
+  code: string; // 天気コード(気象庁のコード、または Open-Meteo の WMO コード)
   icon: string;
   text: string;
   tempMax?: number;
@@ -19,6 +19,8 @@ export type WeatherDay = {
 };
 
 export type WeatherForecast = {
+  // jma: 気象庁の予報区(東部・西部など) / open-meteo: 市町村など特定の地点のモデル予測
+  source: "jma" | "open-meteo";
   tempPointName?: string;
   days: WeatherDay[];
 };
@@ -39,9 +41,25 @@ export type NormalizedItem = {
   sourceUrl: string;
 };
 
+// 電車の1路線の現在の状態(平常運転の路線も含む。お気に入り路線の表示・選択に使う)
+export type LineState = "normal" | "warning" | "critical" | "unknown";
+
+export type LineStatus = {
+  id: string; // 路線ID(odpt.Railway:...)
+  title: string;
+  operator: string;
+  area: string;
+  state: LineState;
+  label?: string;
+  body?: string;
+  timestamp?: string;
+};
+
 export type GenreResult = {
   ok: boolean;
   items: NormalizedItem[];
+  // 電車のみ: 全路線の状態
+  lines?: LineStatus[];
   isMock?: boolean;
   // isMock のとき、なぜサンプル表示なのかを利用者に伝える文言
   notice?: string;

@@ -1,5 +1,5 @@
 import { withCache } from "../cache";
-import type { GenreResult, NormalizedItem, Severity } from "../types";
+import type { GenreResult, LineState, LineStatus, NormalizedItem, Severity } from "../types";
 
 type OdptTrainInformation = {
   "dc:date": string;
@@ -246,7 +246,21 @@ function resolveLineName(
   return name.startsWith(operator.linePrefix) ? name : `${operator.linePrefix}${name}`;
 }
 
-async function fetchOperator(operator: Operator, key: string | undefined, url: string): Promise<NormalizedItem[]> {
+type Assessed = {
+  railwayId?: string;
+  lineTitle: string;
+  area: string;
+  trouble: ReturnType<typeof assessTrouble>;
+  text: string;
+  cause?: string;
+  date: string;
+};
+
+async function fetchOperator(
+  operator: Operator,
+  key: string | undefined,
+  url: string,
+): Promise<{ items: NormalizedItem[]; lines: LineStatus[] }> {
   const authMode = key ? "auth" : "public";
 
   const infos = await withCache(`train:info:${operator.id}:${authMode}`, INFO_TTL_MS, () =>
@@ -273,35 +287,52 @@ async function fetchOperator(operator: Operator, key: string | undefined, url: s
     }
   }
 
-  type Entry = {
-    railwayId?: string;
-    lineTitle: string;
-    area: string;
-    label?: string;
-    severity: Severity;
-    text: string;
-    cause?: string;
-    date: string;
-  };
-  const entries: Entry[] = [];
-  for (const info of infos) {
+  // 平常運転のものも含めて、すべての運行情報を判定する
+  const assessed: Assessed[] = infos.map((info) => {
     const status = info["odpt:trainInformationStatus"]?.ja?.trim() || undefined;
     const text = dedupeRepeatedText(info["odpt:trainInformationText"]?.ja ?? "詳細情報なし");
-    const trouble = assessTrouble(status, text);
-    if (!trouble.actual) continue;
-
     const railwayId = info["odpt:railway"];
-    entries.push({
+    return {
       railwayId,
       lineTitle: railwayId ? resolveLineName(operator, railwayId, masterNames, text) : `${operator.name}全線`,
       area: railwayId ? areaOf(operator, railwaySuffix(railwayId)) : AREA_METRO,
-      label: trouble.label,
-      severity: trouble.severity,
+      trouble: assessTrouble(status, text),
       text,
       cause: info["odpt:trainInformationCause"]?.ja,
       date: info["dc:date"],
-    });
+    };
+  });
+
+  const bodyOf = (a: { text: string; cause?: string }) => (a.cause ? `${a.text}(原因: ${a.cause})` : a.text);
+
+  // 路線ごとの状態(お気に入り路線の表示・選択用)。路線マスタがある事業者はマスタの全路線を対象にし、
+  // 路線別の情報がない路線(西武など)は事業者全体の情報で代用する
+  const operatorWide = assessed.find((a) => !a.railwayId);
+  const toLine = (id: string, title: string, area: string, a: Assessed | undefined): LineStatus => {
+    const state: LineState = !a ? "unknown" : !a.trouble.actual ? "normal" : a.trouble.severity === "critical" ? "critical" : "warning";
+    const line: LineStatus = { id, title, operator: operator.name, area, state };
+    if (a?.trouble.actual) {
+      line.label = a.trouble.label;
+      line.body = bodyOf(a);
+      line.timestamp = a.date;
+    }
+    return line;
+  };
+  const lines: LineStatus[] = [];
+  const seen = new Set<string>();
+  for (const id of Object.keys(masterNames)) {
+    const a = assessed.find((x) => x.railwayId === id) ?? operatorWide;
+    lines.push(toLine(id, resolveLineName(operator, id, masterNames, ""), areaOf(operator, railwaySuffix(id)), a));
+    seen.add(id);
   }
+  for (const a of assessed) {
+    if (a.railwayId && !seen.has(a.railwayId)) {
+      lines.push(toLine(a.railwayId, a.lineTitle, a.area, a));
+      seen.add(a.railwayId);
+    }
+  }
+
+  const entries = assessed.filter((a) => a.trouble.actual);
 
   const base = {
     genre: "train" as const,
@@ -309,13 +340,12 @@ async function fetchOperator(operator: Operator, key: string | undefined, url: s
     sourceName: `${operator.name}(公共交通オープンデータセンター)`,
     sourceUrl: SOURCE_URL,
   };
-  const bodyOf = (e: Entry) => (e.cause ? `${e.text}(原因: ${e.cause})` : e.text);
 
   // 東武のように、多数の路線に全く同じ文面(全線向けの注意喚起)が出ている場合は1件にまとめる
-  const groups = new Map<string, Entry[]>();
+  const groups = new Map<string, Assessed[]>();
   for (const e of entries) {
-    const key = `${e.area}|${e.label ?? ""}|${e.text}`;
-    groups.set(key, [...(groups.get(key) ?? []), e]);
+    const groupKey = `${e.area}|${e.trouble.label ?? ""}|${e.text}`;
+    groups.set(groupKey, [...(groups.get(groupKey) ?? []), e]);
   }
 
   const items: NormalizedItem[] = [];
@@ -324,14 +354,14 @@ async function fetchOperator(operator: Operator, key: string | undefined, url: s
     if (group.length >= MERGE_THRESHOLD) {
       items.push({
         ...base,
-        id: `train:${operator.id}:${first.area}:${first.label ?? ""}:${first.text}`,
+        id: `train:${operator.id}:${first.area}:${first.trouble.label ?? ""}:${first.text}`,
         area: first.area,
-        title: `${operator.name} ${group.length}路線${first.label ? `: ${first.label}` : ""}`,
+        title: `${operator.name} ${group.length}路線${first.trouble.label ? `: ${first.trouble.label}` : ""}`,
         body: `${bodyOf(first)}(対象: ${group
           .map((e) => (e.lineTitle.startsWith(operator.linePrefix) ? e.lineTitle.slice(operator.linePrefix.length) : e.lineTitle))
           .join("、")})`,
         timestamp: group.reduce((latest, e) => (e.date > latest ? e.date : latest), first.date),
-        severity: first.severity,
+        severity: first.trouble.severity,
       });
       continue;
     }
@@ -340,14 +370,14 @@ async function fetchOperator(operator: Operator, key: string | undefined, url: s
         ...base,
         id: `train:${e.railwayId ?? operator.id}`,
         area: e.area,
-        title: e.label ? `${e.lineTitle}: ${e.label}` : e.lineTitle,
+        title: e.trouble.label ? `${e.lineTitle}: ${e.trouble.label}` : e.lineTitle,
         body: bodyOf(e),
         timestamp: e.date,
-        severity: e.severity,
+        severity: e.trouble.severity,
       });
     }
   }
-  return items;
+  return { items, lines };
 }
 
 const SEVERITY_ORDER: Record<Severity, number> = { critical: 0, warning: 1, info: 2 };
@@ -378,10 +408,12 @@ export async function fetchTrain(): Promise<GenreResult> {
   const settled = await Promise.allSettled(targets.map((t) => fetchOperator(t.operator, t.key, t.url)));
 
   const items: NormalizedItem[] = [];
+  const lines: LineStatus[] = [];
   const failures: string[] = [];
   settled.forEach((result, i) => {
     if (result.status === "fulfilled") {
-      items.push(...result.value);
+      items.push(...result.value.items);
+      lines.push(...result.value.lines);
     } else {
       const reason = result.reason instanceof Error ? result.reason.message : "取得に失敗しました";
       failures.push(`${targets[i].operator.name}の運行情報を取得できませんでした: ${reason}`);
@@ -400,5 +432,5 @@ export async function fetchTrain(): Promise<GenreResult> {
       operatorIndex(a) - operatorIndex(b),
   );
 
-  return { ok: true, items, warnings };
+  return { ok: true, items, lines, warnings };
 }

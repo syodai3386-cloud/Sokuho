@@ -106,6 +106,16 @@
   line-height: 1.6;
 }
 
+.favLink {
+  margin-top: 16px;
+  font-size: 13px;
+}
+
+.favLink a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
 .select {
   width: 100%;
   padding: 12px 14px;

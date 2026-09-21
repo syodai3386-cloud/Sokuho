@@ -93,8 +93,9 @@ export function WeatherCard({ item }: { item: NormalizedItem }) {
         ))}
       </div>
       <p className={styles.note}>
-        {forecast.tempPointName ? `気温は${forecast.tempPointName}の予報。` : ""}
-        降水確率の各バーは、その時刻から6時間の値。降水量は県庁所在地付近の予測値(Open-Meteo)で、地域や時間帯によって実際の雨量は大きく異なることがあります。
+        {forecast.source === "open-meteo"
+          ? "この地点の天気・気温・降水確率・降水量はOpen-Meteoのモデル予測で、気象庁の発表ではありません。降水確率の各バーは、その時刻から6時間の値です。"
+          : `${forecast.tempPointName ? `気温は${forecast.tempPointName}の予報。` : ""}降水確率の各バーは、その時刻から6時間の値。降水量は県庁所在地付近の予測値(Open-Meteo)で、地域や時間帯によって実際の雨量は大きく異なることがあります。`}
       </p>
     </section>
   );

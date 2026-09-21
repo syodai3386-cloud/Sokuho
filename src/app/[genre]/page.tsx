@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { GenreView } from "@/components/GenreView";
+import { WeatherView } from "@/components/WeatherView";
 import { getGenreConfig } from "@/lib/genres";
 
 export default async function GenrePage({
@@ -14,5 +15,5 @@ export default async function GenrePage({
     notFound();
   }
 
-  return <GenreView genre={genre} />;
+  return genre.id === "weather" ? <WeatherView genre={genre} /> : <GenreView genre={genre} />;
 }

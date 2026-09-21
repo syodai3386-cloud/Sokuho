@@ -3,13 +3,16 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import styles from "@/app/[genre]/page.module.css";
+import { useFavorites } from "@/lib/favorites";
 import type { GenreConfig } from "@/lib/genres";
-import type { GenreResult, NormalizedItem } from "@/lib/types";
+import type { GenreResult, LineStatus, NormalizedItem } from "@/lib/types";
+import { FavoriteLines } from "./FavoriteLines";
 import { ResultList } from "./ResultList";
 
 type FetchedState = {
   key: string;
   items: NormalizedItem[];
+  lines: LineStatus[] | undefined;
   isMock: boolean;
   notice: string | undefined;
   warnings: string[] | undefined;
@@ -19,17 +22,33 @@ type FetchedState = {
 const ALL = "all";
 
 export function GenreView({ genre }: { genre: GenreConfig }) {
-  const [target, setTarget] = useState(genre.defaultValue ?? genre.options[0]?.value ?? "");
+  const { favorites, ready } = useFavorites();
+  const [targetOverride, setTargetOverride] = useState<string | null>(null);
+  const [areaOverride, setAreaOverride] = useState<string | null>(null);
   const [reloadCount, setReloadCount] = useState(0);
   const [filter, setFilter] = useState(ALL);
-  const [area, setArea] = useState(genre.defaultArea ?? ALL);
   const [fetched, setFetched] = useState<FetchedState | null>(null);
 
+  // 選択肢の初期値は「画面で選んだ値 > お気に入りで設定した値 > ジャンルの標準」の順
+  const favoriteDefault = favorites.defaults[genre.id];
+  const target =
+    targetOverride ??
+    (favoriteDefault && genre.options.some((o) => o.value === favoriteDefault) ? favoriteDefault : undefined) ??
+    genre.defaultValue ??
+    genre.options[0]?.value ??
+    "";
+  const favoriteArea = genre.areas && favorites.trainArea;
+  const area =
+    areaOverride ??
+    (favoriteArea && (favoriteArea === ALL || genre.areas?.includes(favoriteArea)) ? favoriteArea : undefined) ??
+    genre.defaultArea ??
+    ALL;
+
   const requestKey = `${genre.id}:${target}:${reloadCount}`;
-  const loading = fetched?.key !== requestKey;
+  const loading = !ready || fetched?.key !== requestKey;
 
   useEffect(() => {
-    if (!target) return;
+    if (!ready || !target) return;
     let cancelled = false;
 
     fetch(`/api/${genre.id}?target=${encodeURIComponent(target)}`)
@@ -39,6 +58,7 @@ export function GenreView({ genre }: { genre: GenreConfig }) {
         setFetched({
           key: requestKey,
           items: data.items,
+          lines: data.lines,
           isMock: Boolean(data.isMock),
           notice: data.notice,
           warnings: data.warnings,
@@ -50,6 +70,7 @@ export function GenreView({ genre }: { genre: GenreConfig }) {
         setFetched({
           key: requestKey,
           items: [],
+          lines: undefined,
           isMock: false,
           notice: undefined,
           warnings: undefined,
@@ -60,7 +81,7 @@ export function GenreView({ genre }: { genre: GenreConfig }) {
     return () => {
       cancelled = true;
     };
-  }, [genre.id, target, requestKey]);
+  }, [ready, genre.id, target, requestKey]);
 
   const allItems = fetched?.items ?? [];
   const areaItems = area === ALL ? allItems : allItems.filter((i) => i.area === area);
@@ -73,6 +94,8 @@ export function GenreView({ genre }: { genre: GenreConfig }) {
       ? `${genre.emptyMessage}(他のエリアには${hiddenByArea}件あります)`
       : genre.emptyMessage;
 
+  const showFavoriteLines = genre.id === "train" && !loading && !fetched?.error && favorites.trainLines.length > 0 && fetched?.lines;
+
   return (
     <main className={styles.main}>
       <Link href="/" className={styles.back}>
@@ -81,16 +104,14 @@ export function GenreView({ genre }: { genre: GenreConfig }) {
       <div className={styles.header}>
         <span className={styles.emoji}>{genre.emoji}</span>
         <h1 className={styles.title}>{genre.label}</h1>
-        {genre.autoLoad && (
-          <button
-            type="button"
-            className={styles.reload}
-            onClick={() => setReloadCount((c) => c + 1)}
-            disabled={loading}
-          >
-            {loading ? "更新中..." : "更新"}
-          </button>
-        )}
+        <button
+          type="button"
+          className={styles.reload}
+          onClick={() => setReloadCount((c) => c + 1)}
+          disabled={loading}
+        >
+          {loading ? "更新中..." : "更新"}
+        </button>
       </div>
 
       {genre.needsRegistration && (
@@ -110,7 +131,7 @@ export function GenreView({ genre }: { genre: GenreConfig }) {
             id="target-select"
             className={styles.select}
             value={target}
-            onChange={(e) => setTarget(e.target.value)}
+            onChange={(e) => setTargetOverride(e.target.value)}
           >
             {genre.options.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -119,6 +140,10 @@ export function GenreView({ genre }: { genre: GenreConfig }) {
             ))}
           </select>
         </>
+      )}
+
+      {showFavoriteLines && fetched?.lines && (
+        <FavoriteLines favorites={favorites.trainLines} lines={fetched.lines} />
       )}
 
       {!loading && !fetched?.error && genre.autoLoad && (
@@ -137,7 +162,7 @@ export function GenreView({ genre }: { genre: GenreConfig }) {
                   type="button"
                   className={`${styles.chip} ${a === area ? styles.chipActive : ""}`}
                   aria-pressed={a === area}
-                  onClick={() => setArea(a)}
+                  onClick={() => setAreaOverride(a)}
                 >
                   {a === ALL ? "すべて" : a} {loading ? "" : count}
                 </button>
@@ -180,6 +205,10 @@ export function GenreView({ genre }: { genre: GenreConfig }) {
       />
 
       {genre.footnote && <p className={styles.footnote}>{genre.footnote}</p>}
+
+      <p className={styles.favLink}>
+        <Link href="/favorites">★ お気に入りを設定する</Link>
+      </p>
     </main>
   );
 }
